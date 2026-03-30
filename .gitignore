@@ -1,0 +1,6 @@
+.env
+postgres_data/
+.n8n/
+.tools/
+n8n/parsers/js/
+rea-fe/frontend/node_modules/

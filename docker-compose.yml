@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: postgres-db
+    restart: always
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  n8n:
+    image: n8nio/n8n
+    container_name: n8n-app
+    restart: always
+    ports:
+      - "5678:5678"
+    environment:
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_USER=${POSTGRES_USER}
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - N8N_BLOCK_SVG_INTERPOLATION=false
+      - NODE_FUNCTION_ALLOW_BUILTIN=crypto
+    volumes:
+      - ./.n8n:/home/node/.n8n
+    depends_on:
+      - postgres
+
+  rea-api:
+    build: ./rea-fe/api
+    container_name: rea-api
+    restart: always
+    ports:
+      - "3001:3001"
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_HOST=postgres
+    depends_on:
+      - postgres
+
+  rea-frontend:
+    build: ./rea-fe/frontend
+    container_name: rea-fe
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:3001
+      - WATCHPACK_POLLING=true
+      - WDS_SOCKET_PORT=3000
+    stdin_open: true
+    volumes:
+      - ./rea-fe/frontend/src:/app/src
+    depends_on:
+      - rea-api
