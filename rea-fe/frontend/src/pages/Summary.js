@@ -11,8 +11,32 @@ import {
 import { fetchOffers, fetchStats, fetchCategories } from '../api';
 import OfferDetailDialog from '../components/OfferDetailDialog';
 
-const PIE_COLORS = { like: '#4caf50', dislike: '#f44336', pending: '#ff9800', unknown: '#9e9e9e' };
+const PIE_COLORS = {
+  strong_like: '#2e7d32',
+  like: '#4caf50',
+  neutral: '#90a4ae',
+  dislike: '#ef5350',
+  strong_dislike: '#c62828',
+  unrated: '#9e9e9e',
+  unknown: '#9e9e9e',
+};
 const fmt = (p) => !p ? '\u2014' : new Intl.NumberFormat('pl-PL', { style: 'currency', currency: 'PLN', maximumFractionDigits: 0 }).format(p);
+
+const gradeLabel = (grade) => {
+  if (grade === 5) return 'strong_like';
+  if (grade === 4) return 'like';
+  if (grade === 3) return 'neutral';
+  if (grade === 2) return 'dislike';
+  if (grade === 1) return 'strong_dislike';
+  return 'unrated';
+};
+
+const gradeChipColor = (grade) => {
+  if (grade >= 4) return 'success';
+  if (grade === 3) return 'info';
+  if (grade <= 2 && grade >= 1) return 'error';
+  return 'default';
+};
 
 const columns = [
   { field: 'title', headerName: 'Title', flex: 2, minWidth: 200 },
@@ -22,10 +46,10 @@ const columns = [
     valueFormatter: (params) => params.value ? Math.round(params.value).toLocaleString('pl-PL') : '\u2014' },
   { field: 'area', headerName: 'Area (m\u00B2)', width: 100, type: 'number' },
   { field: 'ai_rating', headerName: 'AI', width: 70, type: 'number' },
-  { field: 'user_rating', headerName: 'Status', width: 100,
+  { field: 'user_grade', headerName: 'User', width: 150,
     renderCell: (params) => {
-      const c = { like: 'success', dislike: 'error', pending: 'warning' }[params.value] || 'default';
-      return <Chip label={params.value} size="small" color={c} />;
+      const label = gradeLabel(params.value);
+      return <Chip label={label} size="small" color={gradeChipColor(params.value)} />;
     }},
   { field: 'url', headerName: 'Link', width: 70, sortable: false,
     renderCell: (params) => <a href={params.value} target="_blank" rel="noopener noreferrer">Open</a> },
@@ -39,7 +63,7 @@ export default function Summary() {
   const [loading, setLoading] = useState(true);
   const [selId, setSelId] = useState(null);
   const [dlgOpen, setDlgOpen] = useState(false);
-  const [userRating, setUserRating] = useState('');
+  const [userGrade, setUserGrade] = useState('');
   const [category, setCategory] = useState('');
   const [priceMin, setPriceMin] = useState('');
   const [priceMax, setPriceMax] = useState('');
@@ -49,11 +73,11 @@ export default function Summary() {
   const [aiMax, setAiMax] = useState('');
 
   const fp = useCallback(() => ({
-    user_rating: userRating || undefined, category: category || undefined,
+    user_grade: userGrade || undefined, category: category || undefined,
     price_min: priceMin ? Number(priceMin) : undefined, price_max: priceMax ? Number(priceMax) : undefined,
     area_min: areaMin ? Number(areaMin) : undefined, area_max: areaMax ? Number(areaMax) : undefined,
     ai_rating_min: aiMin ? Number(aiMin) : undefined, ai_rating_max: aiMax ? Number(aiMax) : undefined,
-  }), [userRating, category, priceMin, priceMax, areaMin, areaMax, aiMin, aiMax]);
+  }), [userGrade, category, priceMin, priceMax, areaMin, areaMax, aiMin, aiMax]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -72,12 +96,14 @@ export default function Summary() {
         <Typography variant="subtitle2" gutterBottom>Filters</Typography>
         <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
           <FormControl size="small" sx={{ minWidth: 130 }}>
-            <InputLabel>Status</InputLabel>
-            <Select value={userRating} onChange={(e) => setUserRating(e.target.value)} label="Status">
+            <InputLabel>Grade</InputLabel>
+            <Select value={userGrade} onChange={(e) => setUserGrade(e.target.value)} label="Grade">
               <MenuItem value="">All</MenuItem>
-              <MenuItem value="pending">Pending</MenuItem>
-              <MenuItem value="like">Liked</MenuItem>
-              <MenuItem value="dislike">Disliked</MenuItem>
+              <MenuItem value={1}>1 - Strong dislike</MenuItem>
+              <MenuItem value={2}>2 - Dislike</MenuItem>
+              <MenuItem value={3}>3 - Neutral</MenuItem>
+              <MenuItem value={4}>4 - Like</MenuItem>
+              <MenuItem value={5}>5 - Strong like</MenuItem>
             </Select>
           </FormControl>
           <FormControl size="small" sx={{ minWidth: 180 }}>

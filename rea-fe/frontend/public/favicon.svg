@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="REA icon">
+  <defs>
+    <linearGradient id="roof" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1f6feb"/>
+      <stop offset="100%" stop-color="#0b3d91"/>
+    </linearGradient>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f6f8fa"/>
+      <stop offset="100%" stop-color="#dce6f8"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="#eaf2ff"/>
+  <path d="M12 31L32 14l20 17" fill="none" stroke="url(#roof)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="18" y="30" width="28" height="22" rx="3" fill="url(#body)" stroke="#2b4f86" stroke-width="2"/>
+  <rect x="28" y="38" width="8" height="14" rx="1.5" fill="#2b4f86"/>
+  <circle cx="50" cy="48" r="9" fill="#16a34a"/>
+  <path d="M46 48l3 3 5-6" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

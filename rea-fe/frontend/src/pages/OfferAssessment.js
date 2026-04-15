@@ -17,7 +17,7 @@ export default function OfferAssessment() {
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState(null);
   const [dlgOpen, setDlgOpen] = useState(false);
-  const [userRating, setUserRating] = useState('pending');
+  const [userGrade, setUserGrade] = useState('null');
   const [category, setCategory] = useState('');
   const [sortBy, setSortBy] = useState('created_at');
   const [sortDir, setSortDir] = useState('desc');
@@ -25,18 +25,25 @@ export default function OfferAssessment() {
   const load = useCallback(async () => {
     setLoading(true);
     const data = await fetchOffers({
-      user_rating: userRating || undefined, category: category || undefined,
+      user_grade: userGrade || undefined, category: category || undefined,
       sort_by: sortBy, sort_dir: sortDir, limit: PER_PAGE, offset: (page - 1) * PER_PAGE,
     });
     setOffers(data.offers);
     setTotal(data.total);
     setLoading(false);
-  }, [userRating, category, sortBy, sortDir, page]);
+  }, [userGrade, category, sortBy, sortDir, page]);
 
   useEffect(() => { fetchCategories().then(setCategories); }, []);
   useEffect(() => { load(); }, [load]);
 
-  const handleRate = async (id, r) => { await updateOffer(id, { user_rating: r }); load(); };
+  const handleRate = async (id, grade) => {
+    if (grade == null) {
+      await updateOffer(id, { user_rating: 'pending' });
+    } else {
+      await updateOffer(id, { user_grade: grade });
+    }
+    load();
+  };
   const totalPages = Math.ceil(total / PER_PAGE);
 
   return (
@@ -44,12 +51,15 @@ export default function OfferAssessment() {
       <Typography variant="h5" gutterBottom>Offer Assessment</Typography>
       <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap', alignItems: 'center' }}>
         <FormControl size="small" sx={{ minWidth: 150 }}>
-          <InputLabel>Status</InputLabel>
-          <Select value={userRating} onChange={(e) => { setUserRating(e.target.value); setPage(1); }} label="Status">
+          <InputLabel>Grade</InputLabel>
+          <Select value={userGrade} onChange={(e) => { setUserGrade(e.target.value); setPage(1); }} label="Grade">
             <MenuItem value="">All</MenuItem>
-            <MenuItem value="pending">Pending</MenuItem>
-            <MenuItem value="like">Liked</MenuItem>
-            <MenuItem value="dislike">Disliked</MenuItem>
+            <MenuItem value="null">Pending</MenuItem>
+            <MenuItem value={1}>1 - Strong dislike</MenuItem>
+            <MenuItem value={2}>2 - Dislike</MenuItem>
+            <MenuItem value={3}>3 - Neutral</MenuItem>
+            <MenuItem value={4}>4 - Like</MenuItem>
+            <MenuItem value={5}>5 - Strong like</MenuItem>
           </Select>
         </FormControl>
         <FormControl size="small" sx={{ minWidth: 200 }}>
@@ -67,6 +77,7 @@ export default function OfferAssessment() {
             <MenuItem value="price_per_m2">Price/m&sup2;</MenuItem>
             <MenuItem value="area">Area</MenuItem>
             <MenuItem value="ai_rating">AI Rating</MenuItem>
+            <MenuItem value="user_grade">User Grade</MenuItem>
           </Select>
         </FormControl>
         <FormControl size="small" sx={{ minWidth: 120 }}>

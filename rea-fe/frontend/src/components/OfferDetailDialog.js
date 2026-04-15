@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import {
   Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField,
-  Typography, Box, Chip, IconButton, Divider, ToggleButtonGroup, ToggleButton,
+  Typography, Box, Chip, IconButton, Divider, FormControl, InputLabel, Select, MenuItem,
   Link as MuiLink, Grid, CircularProgress,
 } from '@mui/material';
+import KeyboardDoubleArrowUpIcon from '@mui/icons-material/KeyboardDoubleArrowUp';
+import KeyboardDoubleArrowDownIcon from '@mui/icons-material/KeyboardDoubleArrowDown';
 import ThumbUpIcon from '@mui/icons-material/ThumbUp';
 import ThumbDownIcon from '@mui/icons-material/ThumbDown';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
+import ClearIcon from '@mui/icons-material/Clear';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import CloseIcon from '@mui/icons-material/Close';
 import DOMPurify from 'dompurify';
@@ -14,10 +17,18 @@ import { getOffer, updateOffer } from '../api';
 
 const fmt = (p) => !p ? '\u2014' : new Intl.NumberFormat('pl-PL', { style: 'currency', currency: 'PLN', maximumFractionDigits: 0 }).format(p);
 
+const LEGACY_TO_GRADE = {
+  like: 4,
+  dislike: 2,
+  '👍 I like it': 4,
+  "👎 I don't like it": 2,
+  pending: '',
+};
+
 export default function OfferDetailDialog({ offerId, open, onClose, onUpdated }) {
   const [offer, setOffer] = useState(null);
   const [notes, setNotes] = useState('');
-  const [rating, setRating] = useState('pending');
+  const [rating, setRating] = useState('');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -27,7 +38,8 @@ export default function OfferDetailDialog({ offerId, open, onClose, onUpdated })
       getOffer(offerId).then((d) => {
         setOffer(d);
         setNotes(d.user_notes || '');
-        setRating(d.user_rating || 'pending');
+        const initialGrade = d.user_grade ?? LEGACY_TO_GRADE[d.user_rating] ?? '';
+        setRating(initialGrade);
         setLoading(false);
       });
     }
@@ -35,10 +47,17 @@ export default function OfferDetailDialog({ offerId, open, onClose, onUpdated })
 
   const handleSave = async () => {
     setSaving(true);
-    const updated = await updateOffer(offerId, { user_rating: rating, user_notes: notes });
+    const payload = { user_notes: notes };
+    if (rating === '') {
+      payload.user_rating = 'pending';
+    } else {
+      payload.user_grade = Number(rating);
+    }
+    const updated = await updateOffer(offerId, payload);
     setOffer(updated);
     setSaving(false);
     onUpdated(updated);
+    onClose();
   };
 
   return (
@@ -107,12 +126,41 @@ export default function OfferDetailDialog({ offerId, open, onClose, onUpdated })
           <Typography variant="subtitle1" fontWeight="bold" gutterBottom>Your Assessment</Typography>
           <Box sx={{ mb: 2 }}>
             <Typography variant="caption" color="text.secondary" gutterBottom>Rating</Typography>
-            <ToggleButtonGroup value={rating} exclusive
-              onChange={(e, val) => val && setRating(val)} fullWidth sx={{ mt: 1 }}>
-              <ToggleButton value="like" color="success"><ThumbUpIcon sx={{ mr: 1 }} /> Like</ToggleButton>
-              <ToggleButton value="pending" color="info"><HelpOutlineIcon sx={{ mr: 1 }} /> Pending</ToggleButton>
-              <ToggleButton value="dislike" color="error"><ThumbDownIcon sx={{ mr: 1 }} /> Dislike</ToggleButton>
-            </ToggleButtonGroup>
+            <FormControl fullWidth size="small" sx={{ mt: 1 }}>
+              <InputLabel>Grade</InputLabel>
+              <Select value={rating} onChange={(e) => setRating(e.target.value)} label="Grade">
+                <MenuItem value="">
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <ClearIcon fontSize="small" /> Unrated
+                  </Box>
+                </MenuItem>
+                <MenuItem value={1}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <KeyboardDoubleArrowDownIcon fontSize="small" /> 1 - Strong dislike
+                  </Box>
+                </MenuItem>
+                <MenuItem value={2}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <ThumbDownIcon fontSize="small" /> 2 - Dislike
+                  </Box>
+                </MenuItem>
+                <MenuItem value={3}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <HelpOutlineIcon fontSize="small" /> 3 - Neutral
+                  </Box>
+                </MenuItem>
+                <MenuItem value={4}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <ThumbUpIcon fontSize="small" /> 4 - Like
+                  </Box>
+                </MenuItem>
+                <MenuItem value={5}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <KeyboardDoubleArrowUpIcon fontSize="small" /> 5 - Strong like
+                  </Box>
+                </MenuItem>
+              </Select>
+            </FormControl>
           </Box>
           <TextField label="Your Notes" multiline rows={3} fullWidth value={notes}
             onChange={(e) => setNotes(e.target.value)}

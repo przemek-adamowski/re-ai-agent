@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:15
@@ -11,8 +9,15 @@ services:
       - POSTGRES_DB=${POSTGRES_DB}
     volumes:
       - ./postgres_data:/var/lib/postgresql/data
+    # Host port 5433 avoids conflicts with other local Postgres instances on 5432.
     ports:
-      - "5432:5432"
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   n8n:
     image: n8nio/n8n
@@ -33,7 +38,8 @@ services:
     volumes:
       - ./.n8n:/home/node/.n8n
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
 
   rea-api:
     build: ./rea-fe/api
@@ -47,7 +53,14 @@ services:
       - POSTGRES_DB=${POSTGRES_DB}
       - POSTGRES_HOST=postgres
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:3001/api/categories', timeout=3)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
 
   rea-frontend:
     build: ./rea-fe/frontend
@@ -63,4 +76,5 @@ services:
     volumes:
       - ./rea-fe/frontend/src:/app/src
     depends_on:
-      - rea-api
+      rea-api:
+        condition: service_healthy
