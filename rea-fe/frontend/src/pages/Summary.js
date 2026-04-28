@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Grid, Typography, Box, FormControl, InputLabel, Select, MenuItem,
-  TextField, CircularProgress, Paper, Chip,
+  TextField, CircularProgress, Paper, Chip, FormControlLabel, Switch,
 } from '@mui/material';
 import { DataGrid } from '@mui/x-data-grid';
 import {
@@ -10,6 +10,7 @@ import {
 } from 'recharts';
 import { fetchOffers, fetchStats, fetchCategories } from '../api';
 import OfferDetailDialog from '../components/OfferDetailDialog';
+import { chipToneSx, geoStatusLabel, gradeToLabel, reviewStatusLabel } from '../offerStatus';
 
 const PIE_COLORS = {
   strong_like: '#2e7d32',
@@ -21,15 +22,6 @@ const PIE_COLORS = {
   unknown: '#9e9e9e',
 };
 const fmt = (p) => !p ? '\u2014' : new Intl.NumberFormat('pl-PL', { style: 'currency', currency: 'PLN', maximumFractionDigits: 0 }).format(p);
-
-const gradeLabel = (grade) => {
-  if (grade === 5) return 'strong_like';
-  if (grade === 4) return 'like';
-  if (grade === 3) return 'neutral';
-  if (grade === 2) return 'dislike';
-  if (grade === 1) return 'strong_dislike';
-  return 'unrated';
-};
 
 const gradeChipColor = (grade) => {
   if (grade >= 4) return 'success';
@@ -46,9 +38,14 @@ const columns = [
     valueFormatter: (params) => params.value ? Math.round(params.value).toLocaleString('pl-PL') : '\u2014' },
   { field: 'area', headerName: 'Area (m\u00B2)', width: 100, type: 'number' },
   { field: 'ai_rating', headerName: 'AI', width: 70, type: 'number' },
+  { field: 'district', headerName: 'District', width: 180 },
+  { field: 'geo_status', headerName: 'Region', width: 140,
+    renderCell: (params) => <Chip label={geoStatusLabel(params.value)} size="small" sx={chipToneSx(params.value === 'in_region' ? 'info' : params.value === 'out_of_region' ? 'error' : 'default')} /> },
+  { field: 'review_status', headerName: 'Workflow', width: 140,
+    renderCell: (params) => <Chip label={reviewStatusLabel(params.value)} size="small" sx={chipToneSx(params.value === 'approved' ? 'success' : params.value === 'pending' ? 'warning' : params.value === 'blocked' ? 'error' : 'default')} /> },
   { field: 'user_grade', headerName: 'User', width: 150,
     renderCell: (params) => {
-      const label = gradeLabel(params.value);
+      const label = gradeToLabel(params.value);
       return <Chip label={label} size="small" color={gradeChipColor(params.value)} />;
     }},
   { field: 'url', headerName: 'Link', width: 70, sortable: false,
@@ -71,13 +68,17 @@ export default function Summary() {
   const [areaMax, setAreaMax] = useState('');
   const [aiMin, setAiMin] = useState('');
   const [aiMax, setAiMax] = useState('');
+  const [showOutOfRegion, setShowOutOfRegion] = useState(false);
+  const [showTrash, setShowTrash] = useState(false);
 
   const fp = useCallback(() => ({
     user_grade: userGrade || undefined, category: category || undefined,
     price_min: priceMin ? Number(priceMin) : undefined, price_max: priceMax ? Number(priceMax) : undefined,
     area_min: areaMin ? Number(areaMin) : undefined, area_max: areaMax ? Number(areaMax) : undefined,
     ai_rating_min: aiMin ? Number(aiMin) : undefined, ai_rating_max: aiMax ? Number(aiMax) : undefined,
-  }), [userGrade, category, priceMin, priceMax, areaMin, areaMax, aiMin, aiMax]);
+    show_out_of_region: showOutOfRegion,
+    show_trash: showTrash,
+  }), [userGrade, category, priceMin, priceMax, areaMin, areaMax, aiMin, aiMax, showOutOfRegion, showTrash]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -95,6 +96,14 @@ export default function Summary() {
       <Paper sx={{ p: 2, mb: 3 }}>
         <Typography variant="subtitle2" gutterBottom>Filters</Typography>
         <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+          <FormControlLabel
+            control={<Switch checked={showOutOfRegion} onChange={(e) => setShowOutOfRegion(e.target.checked)} />}
+            label="Show blocked"
+          />
+          <FormControlLabel
+            control={<Switch checked={showTrash} onChange={(e) => setShowTrash(e.target.checked)} />}
+            label="Show trash"
+          />
           <FormControl size="small" sx={{ minWidth: 130 }}>
             <InputLabel>Grade</InputLabel>
             <Select value={userGrade} onChange={(e) => setUserGrade(e.target.value)} label="Grade">
@@ -120,6 +129,7 @@ export default function Summary() {
           <TextField size="small" label="AI min" type="number" value={aiMin} onChange={(e) => setAiMin(e.target.value)} sx={{ width: 80 }} />
           <TextField size="small" label="AI max" type="number" value={aiMax} onChange={(e) => setAiMax(e.target.value)} sx={{ width: 80 }} />
           <Chip label={`${total} offers`} color="primary" variant="outlined" />
+          <Chip label={`${stats?.unrated_ai_count ?? 0} AI pending`} variant="outlined" />
         </Box>
       </Paper>
       {loading ? (

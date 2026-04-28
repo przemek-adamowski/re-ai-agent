@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Grid, Typography, Box, FormControl, InputLabel, Select, MenuItem,
-  CircularProgress, Pagination, Chip,
+  CircularProgress, Pagination, Chip, FormControlLabel, Switch, TextField,
+  InputAdornment, IconButton,
 } from '@mui/material';
+import ClearIcon from '@mui/icons-material/Clear';
 import OfferCard from '../components/OfferCard';
 import OfferDetailDialog from '../components/OfferDetailDialog';
 import { fetchOffers, updateOffer, fetchCategories } from '../api';
@@ -19,6 +21,10 @@ export default function OfferAssessment() {
   const [dlgOpen, setDlgOpen] = useState(false);
   const [userGrade, setUserGrade] = useState('null');
   const [category, setCategory] = useState('');
+  const [search, setSearch] = useState('');
+  const [showOutOfRegion, setShowOutOfRegion] = useState(false);
+  const [showTrash, setShowTrash] = useState(false);
+  const [reviewQueueOnly, setReviewQueueOnly] = useState(false);
   const [sortBy, setSortBy] = useState('created_at');
   const [sortDir, setSortDir] = useState('desc');
 
@@ -26,12 +32,16 @@ export default function OfferAssessment() {
     setLoading(true);
     const data = await fetchOffers({
       user_grade: userGrade || undefined, category: category || undefined,
+      search: search || undefined,
+      show_out_of_region: showOutOfRegion,
+      show_trash: showTrash,
+      review_queue_only: reviewQueueOnly,
       sort_by: sortBy, sort_dir: sortDir, limit: PER_PAGE, offset: (page - 1) * PER_PAGE,
     });
     setOffers(data.offers);
     setTotal(data.total);
     setLoading(false);
-  }, [userGrade, category, sortBy, sortDir, page]);
+  }, [userGrade, category, search, showOutOfRegion, showTrash, reviewQueueOnly, sortBy, sortDir, page]);
 
   useEffect(() => { fetchCategories().then(setCategories); }, []);
   useEffect(() => { load(); }, [load]);
@@ -69,6 +79,40 @@ export default function OfferAssessment() {
             {categories.map((c) => <MenuItem key={c} value={c}>{c}</MenuItem>)}
           </Select>
         </FormControl>
+        <TextField
+          size="small"
+          label="Search"
+          value={search}
+          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+          placeholder="Search all text fields"
+          sx={{ minWidth: 260, flexGrow: 1 }}
+          InputProps={{
+            endAdornment: search && (
+              <InputAdornment position="end">
+                <IconButton
+                  size="small"
+                  onClick={() => { setSearch(''); setPage(1); }}
+                  edge="end"
+                  title="Clear search"
+                >
+                  <ClearIcon fontSize="small" />
+                </IconButton>
+              </InputAdornment>
+            ),
+          }}
+        />
+        <FormControlLabel
+          control={<Switch checked={reviewQueueOnly} onChange={(e) => { setReviewQueueOnly(e.target.checked); setPage(1); }} />}
+          label="Review queue"
+        />
+        <FormControlLabel
+          control={<Switch checked={showOutOfRegion} onChange={(e) => { setShowOutOfRegion(e.target.checked); setPage(1); }} />}
+          label="Show blocked"
+        />
+        <FormControlLabel
+          control={<Switch checked={showTrash} disabled={reviewQueueOnly} onChange={(e) => { setShowTrash(e.target.checked); setPage(1); }} />}
+          label="Show trash"
+        />
         <FormControl size="small" sx={{ minWidth: 150 }}>
           <InputLabel>Sort by</InputLabel>
           <Select value={sortBy} onChange={(e) => setSortBy(e.target.value)} label="Sort by">
@@ -78,6 +122,8 @@ export default function OfferAssessment() {
             <MenuItem value="area">Area</MenuItem>
             <MenuItem value="ai_rating">AI Rating</MenuItem>
             <MenuItem value="user_grade">User Grade</MenuItem>
+            <MenuItem value="district">District</MenuItem>
+            <MenuItem value="reviewed_at">Reviewed at</MenuItem>
           </Select>
         </FormControl>
         <FormControl size="small" sx={{ minWidth: 120 }}>
@@ -87,7 +133,7 @@ export default function OfferAssessment() {
             <MenuItem value="asc">Ascending</MenuItem>
           </Select>
         </FormControl>
-        <Chip label={`${total} offers`} color="primary" variant="outlined" />
+        <Chip label={`${total} ${reviewQueueOnly ? 'queue items' : 'offers'}`} color="primary" variant="outlined" />
       </Box>
       {loading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress /></Box>
