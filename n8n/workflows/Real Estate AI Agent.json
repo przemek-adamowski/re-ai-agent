@@ -319,7 +319,7 @@
     },
     {
       "parameters": {
-        "content": "## Real Estate AI Agent\n\n**Version:** `1.0.1`\n**Git SHA:** `5a08417`\n**Built:** `2026-04-28`\n\nUpload check:\n- workflow name is `Real Estate AI Agent`\n- metadata node is `Workflow Metadata - v1.0.1`",
+        "content": "## Real Estate AI Agent\n\n**Version:** `1.0.1`\n**Git SHA:** `e682c4d`\n**Built:** `2026-04-28`\n\nUpload check:\n- workflow name is `Real Estate AI Agent`\n- metadata node is `Workflow Metadata - v1.0.1`",
         "height": 240,
         "width": 560,
         "color": 4
@@ -335,7 +335,7 @@
     },
     {
       "parameters": {
-        "jsCode": "return [{\n  json: {\n    \"workflow_name\": \"Real Estate AI Agent\",\n    \"workflow_version\": \"1.0.1\",\n    \"workflow_display_name\": \"Real Estate AI Agent\",\n    \"git_sha\": \"5a08417\",\n    \"build_date\": \"2026-04-28\",\n    \"workflow_file\": \"n8n/workflows/Real Estate AI Agent.json\",\n    \"version_source\": \"n8n/workflows/Real Estate AI Agent.json\"\n  }\n}];"
+        "jsCode": "return [{\n  json: {\n    \"workflow_name\": \"Real Estate AI Agent\",\n    \"workflow_version\": \"1.0.1\",\n    \"workflow_display_name\": \"Real Estate AI Agent\",\n    \"git_sha\": \"e682c4d\",\n    \"build_date\": \"2026-04-28\",\n    \"workflow_file\": \"n8n/workflows/Real Estate AI Agent.json\",\n    \"version_source\": \"n8n/workflows/Real Estate AI Agent.json\"\n  }\n}];"
       },
       "id": "workflow-metadata-node",
       "name": "Workflow Metadata - v1.0.1",
