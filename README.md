@@ -2,6 +2,27 @@
 
 Real Estate AI Agent for scraping Polish property listings, enriching them with AI scoring, storing them in PostgreSQL, and reviewing offers in a React dashboard.
 
+## Workflow Versioning
+
+The active n8n workflow is versioned with semantic versions in `x.y.z` format.
+
+- Canonical source: `n8n/workflows/Real Estate AI Agent.json`
+- Visible checks after import: workflow name, version sticky note, and disconnected metadata node
+
+Restamp the workflow using the version already embedded in the metadata node:
+
+```bash
+node scripts/bump-workflow-version.js
+```
+
+Bump to a new version and restamp the workflow:
+
+```bash
+node scripts/bump-workflow-version.js 1.0.1
+```
+
+After importing the workflow into n8n, confirm that the workflow name stays `Real Estate AI Agent` and that the `Workflow Metadata - v...` node matches the expected version.
+
 ## What This Project Does
 
 - Scrapes listing portals with n8n workflows.

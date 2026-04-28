@@ -1,6 +1,12 @@
 .env
+.DS_Store
+__pycache__/
+*.pyc
+backup-*.sql
 postgres_data/
 .n8n/
 .tools/
+n8n/.local-execution-data/
+n8n/parsers/data/
 n8n/parsers/js/
 rea-fe/frontend/node_modules/

@@ -1,35 +1,51 @@
 INSERT INTO rea_property_offers (
-    external_id,        -- $1
-    category,           -- $2
-    url,                -- $3
-    title,              -- $4
-    price,              -- $5
-    price_per_m2,       -- $6
-    area,               -- $7
-    lot_size,           -- $8
-    construction_year,  -- $9
-    ai_rating, 
+    external_id,
+    category,
+    url,
+    title,
+    price,
+    price_per_m2,
+    area,
+    lot_size,
+    construction_year,
+    ai_rating,
     user_rating,
-    user_notes,
-    created_at,         -- $10
-    last_seen_at        -- $10
+    created_at,
+    last_seen_at,
+    property_portal,
+    district,
+    location_text
 ) VALUES (
-    $1, 
-    $2, 
-    $3, 
-    $4, 
-    $5, 
-    $6, 
-    $7, 
-    $8, 
-    $9, 
-    0,                  -- ai_rating (domyślnie)
-    'pending',          -- user_rating (domyślnie)
-    NULL,               -- user_notes
-    $10::timestamp, 
-    $10::timestamp
-) 
-ON CONFLICT (external_id) DO NOTHING
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7,
+    $8,
+    $9,
+    0,
+    'pending',
+    $10::timestamp,
+    NOW(),
+    $11,
+    $12,
+    $13
+)
+ON CONFLICT (external_id) DO UPDATE SET
+    category = EXCLUDED.category,
+    url = EXCLUDED.url,
+    title = COALESCE(NULLIF(EXCLUDED.title, ''), rea_property_offers.title),
+    price = CASE WHEN COALESCE(EXCLUDED.price, 0) > 0 THEN EXCLUDED.price ELSE rea_property_offers.price END,
+    price_per_m2 = CASE WHEN COALESCE(EXCLUDED.price_per_m2, 0) > 0 THEN EXCLUDED.price_per_m2 ELSE rea_property_offers.price_per_m2 END,
+    area = CASE WHEN COALESCE(EXCLUDED.area, 0) > 0 THEN EXCLUDED.area ELSE rea_property_offers.area END,
+    lot_size = CASE WHEN COALESCE(EXCLUDED.lot_size, 0) > 0 THEN EXCLUDED.lot_size ELSE rea_property_offers.lot_size END,
+    construction_year = CASE WHEN COALESCE(EXCLUDED.construction_year, 0) > 0 THEN EXCLUDED.construction_year ELSE rea_property_offers.construction_year END,
+    property_portal = COALESCE(EXCLUDED.property_portal, rea_property_offers.property_portal),
+    district = COALESCE(EXCLUDED.district, rea_property_offers.district),
+    location_text = COALESCE(EXCLUDED.location_text, rea_property_offers.location_text),
+    last_seen_at = EXCLUDED.last_seen_at
 RETURNING *;
 
 {{ $json.external_id }},
@@ -39,6 +55,9 @@ RETURNING *;
 {{ Number($json.price) || 0 }},
 {{ Number($json.price_per_m2) || 0 }},
 {{ Number($json.area) || 0 }},
-{{ $json.lot_size || null }},
-{{ $json.construction_year || null }},
-{{ $json.created_at || new Date().toISOString() }}
+{{ Number($json.lot_size) || 0 }},
+{{ Number($json.construction_year) || 0 }},
+{{ $json.created_at || new Date().toISOString() }},
+{{ $json.property_portal || null }},
+{{ $json.district || null }},
+{{ $json.location_text || null }}
