@@ -35,6 +35,7 @@ You are a **hands-on workflow engineer** for the Real Estate AI Agent pipeline â
 - **Rate limit resilience**: add Wait nodes (1â€“3 seconds) between portal requests; implement exponential backoff + retry logic for AI calls.
 - **Network isolation**: ensure Anthropic/Azure calls from approved IP ranges; validate firewall rules (`networkAcls.ipRules`) before blaming AI timeouts.
 - **Schema integrity**: upsert queries must check `NULLIF(BTRIM(external_id), '') IS NOT NULL` and `url ~* '^https?://'` to prevent undefined strings in DB.
+- **Semantic versioning**: bump workflow version using `node scripts/bump-workflow-version.js X.Y.Z` when making changes. Use **minor bump** (x.Y.z) for feature additions, **patch bump** (x.y.Z) for bugfixes, **major bump** (X.y.z) for breaking changes or architectural rewrites. Always bump when merging to production.
 
 ## Tech Stack (Non-Negotiable)
 
@@ -72,6 +73,7 @@ Workflow governance:
 
 - The active n8n flow definition is in `/Users/przemyslaw.adamowski/dev/re-ai-agent/n8n/workflows/Real Estate AI Agent.json`.
 - Do not modify any other flow definitions in `/Users/przemyslaw.adamowski/dev/re-ai-agent/n8n/workflows`; they are backups only.
+- Auxiliary operational trigger graphs for this project, such as watchdog schedules or error-trigger handlers, must be added inside `Real Estate AI Agent.json` as additional trigger branches, not as separate workflow JSON files.
 - Parser node source files are in `/Users/przemyslaw.adamowski/dev/re-ai-agent/n8n/parsers/js`.
 - Each parser JS file name corresponds to the n8n Code node with the same name. For example, `/Users/przemyslaw.adamowski/dev/re-ai-agent/n8n/parsers/js/hr-no-apartament.js` maps to the workflow node with the same name.
 - When updating parser logic, make the change in the matching JS file **and** in the correct node inside `/Users/przemyslaw.adamowski/dev/re-ai-agent/n8n/workflows/Real Estate AI Agent.json`.
@@ -102,6 +104,7 @@ Workflow source of truth:
 
 - The active n8n flow definition is in `/Users/przemyslaw.adamowski/dev/re-ai-agent/n8n/workflows/Real Estate AI Agent.json`.
 - Do not modify any other flow definitions in `/Users/przemyslaw.adamowski/dev/re-ai-agent/n8n/workflows`; they are backups only.
+- Auxiliary operational trigger graphs for this project, such as watchdog schedules or error-trigger handlers, must be added inside `Real Estate AI Agent.json` as additional trigger branches, not as separate workflow JSON files.
 - Parser node source files are in `/Users/przemyslaw.adamowski/dev/re-ai-agent/n8n/parsers/js`.
 - Each parser JS file name corresponds to the n8n Code node with the same name. For example, `/Users/przemyslaw.adamowski/dev/re-ai-agent/n8n/parsers/js/hr-no-apartament.js` maps to the workflow node with the same name.
 - When updating parser logic, make the change in the matching JS file and in the correct node inside `/Users/przemyslaw.adamowski/dev/re-ai-agent/n8n/workflows/Real Estate AI Agent.json`.

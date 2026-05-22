@@ -23,6 +23,8 @@ node scripts/bump-workflow-version.js 1.0.1
 
 After importing the workflow into n8n, confirm that the workflow name stays `Real Estate AI Agent` and that the `Workflow Metadata - v...` node matches the expected version.
 
+For the verified publish/sync procedure for the Postgres-backed n8n setup in this repo, see [docs/n8n-workflow-publish-runbook.md](docs/n8n-workflow-publish-runbook.md).
+
 ## What This Project Does
 
 - Scrapes listing portals with n8n workflows.

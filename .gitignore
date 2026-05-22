@@ -3,10 +3,15 @@
 __pycache__/
 *.pyc
 backup-*.sql
+backup-*.dump
 postgres_data/
+.postgres_data/
 .n8n/
 .tools/
+.claude/
+.vscode/
 n8n/.local-execution-data/
 n8n/parsers/data/
 n8n/parsers/js/
 rea-fe/frontend/node_modules/
+docs/js-merge-with-desc-output.json

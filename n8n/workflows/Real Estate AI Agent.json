@@ -3,8 +3,27 @@
   "nodes": [
     {
       "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "id": "d0ed7276-3bf4-43be-bb52-8e71f31b35ba",
+      "name": "st-apartment",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [
+        81232,
+        22240
+      ],
+      "typeVersion": 1.3
+    },
+    {
+      "parameters": {
         "promptType": "define",
-        "text": "=# SYSTEM PROMPT: KRAKOW REAL ESTATE ANALYSIS EXPERT\n\n## ROLE\nYou are a precise real estate market analyst. Your task is to extract technical data from the listing HTML code and assign a rating (ai_rating) based on defined user preferences.\n\n## YOUR PREFERENCES (RATING CRITERIA)\nAssign `ai_rating` on a 1-10 scale, where 10 is the highest rating, considering:\n- **Location:**: Krakow (highest score: South Krakow).\n- **Area**: minimum 90 sqm.\n- **Layout:**: 3 bedrooms and 2 bathrooms, terrace.\n- **Amenities**: elevator.\n- **Negatives (lower the rating):**: electric heating, gas.\n- **Building type**: boutique (under 50 apartments).\n\n## HINT FROM PAST USER FEEDBACK\nUse the following past user decisions as a soft hint only. Prioritize strong signals first: grade 5 over 4, and grade 1 over 2. Prefer current listing facts over pattern matching.\n\n{{ $json.feedback_hint }}\n\n## INPUT DATA\n- **EXTERNAL_ID**: <ID>{{ $json.external_id }}</ID>\n- **Title**: {{ $json.title }} \n- **Input price**: {{ $json.price }} PLN\n- **Input price per m2**: {{ $json.price_per_m2 }} PLN\n- **Area**: {{ $json.area }} m2\n- **Lot size**: {{ $json.lot_size }} m2\n- **Construction year**: {{ $json.construction_year }}\n\n## LISTING PAGE CONTENT (FOR ANALYSIS)##: \n\n<AD_CONTENT>\n{{ $json.raw_html || '' }} \n</AD_CONTENT>\n\n## DATA EXTRACTION INSTRUCTIONS\nAnalyse the provided HTML inside <AD_CONTENT> and find and fill in gaps in the input data:\n1. **title**: Full, attractive listing title.\n2. **price**: Total property price (remove \"PLN\", \"PLN\", spaces). Return as a number.\n3. **price_per_m2**: Price per sqm. If not available, calculate: price / area.\n4. **area**: Apartment area (number).\n5. **lot_size**: Lot size in ares (only for houses, otherwise 0).\n6. **year**: Construction year (if missing, estimate or use 0).\n7. **ai_rating**: Your rating (1-10) based on the above preferences.\n\n## EMAIL SUMMARY PREPARATION INSTRUCTIONS (email_html_content field)\n\nGenerate HTML content to be inserted into the email summary section. Focus on substantive analysis.\n\nHTML content requirements:\n\nAI Verdict: Brief justification of the ai_rating score (np. \"Ideal area and location, but deducting points for gas\").\n\nPros Analysis: List features matching preferences (np. southern location, terrace, boutique building, 2 bathrooms).\n\nRisk Analysis (Cons): Clearly indicate what lowered the rating (np. \"gas heating\", \"no elevator\", \"no information about number of apartments in the building\").\n\nLocation: Provide the most precise location possible (district, street).\n\nStyling: Use clean HTML. Use <strong>, <ul>, <li>. Do not add CSS styles inside this field (they will be overridden by the n8n template).\n\nExample structure inside the string:\n\"<strong>Listing analysis:</strong> The apartment meets the key area requirement (90m2+) and has the desired 3-bedroom layout. \n<ul>\n  <li>✅ South Krakow (Debniki)</li>\n  <li>✅ Terrace and 2 bathrooms</li>\n  <li>❌ Gas heating (rating lowered)</li>\n</ul>\"\n\n## OUTPUT FORMAT (STRICT JSON)\nReturn ONLY a clean JSON object. Do not add any comments or introductions.\nUnder no circumstances modify the EXTERNAL_ID value = {{ $json.external_id }}\n\nEXTERNAL_ID is in text format, type \"string\"\n\n{\n  \"external_id\": \"string\",\n  \"title\": \"string\",\n  \"price\": number,\n  \"price_per_m2\": number,\n  \"area\": number,\n  \"lot_size\": number,\n  \"construction_year\": number,\n  \"ai_rating\": number,\n  \"ai_analysis_html\": \"string\"\n}",
+        "text": "=# SYSTEM PROMPT: KRAKOW REAL ESTATE ANALYSIS EXPERT\n\n## ROLE\nYou are a precise real estate market analyst. Your task is to extract technical data from the listing HTML code and assign a rating (ai_rating) based on defined user preferences.\n\n## PROPERTY-TYPE FIRST RULE\nBefore scoring, determine the property type from the title and HTML. Distinguish between:\n- apartment in a multi-unit building\n- house, semi-detached house, townhouse, segment\n- house-like unit or apartment marketed as \"jak dom\"\n\nApply only criteria that make sense for that property type. Do not penalize a listing for missing features that are irrelevant for its type.\n\n## YOUR PREFERENCES (RATING CRITERIA)\nAssign `ai_rating` on a 1-10 scale, where 10 is the highest rating, considering:\n- **Location:**: Krakow (highest score: South Krakow).\n- **Area**: minimum 90 sqm.\n- **Layout:**: 3 bedrooms and 2 bathrooms, terrace.\n- **Amenities**: elevator, but only when relevant for apartments in multi-unit buildings. Do not lower the rating for houses, semi-detached homes, townhouses, segments, or house-like units for lacking an elevator.\n- **Negatives (lower the rating):**: electric heating, gas.\n- **Building type**: boutique (under 50 apartments), but only when the listing is an apartment in a multi-unit building. Treat this as not applicable for houses and house-like units, not as a negative.\n\n## HINT FROM PAST USER FEEDBACK\nUse the following past user decisions as a soft hint only. Prioritize strong signals first: grade 5 over 4, and grade 1 over 2. Prefer current listing facts over pattern matching.\n\n{{ $json.feedback_hint }}\n\n## INPUT DATA\n- **EXTERNAL_ID**: <ID>{{ $json.external_id }}</ID>\n- **Title**: {{ $json.title }} \n- **Input price**: {{ $json.price }} PLN\n- **Input price per m2**: {{ $json.price_per_m2 }} PLN\n- **Area**: {{ $json.area }} m2\n- **Lot size**: {{ $json.lot_size }} m2\n- **Construction year**: {{ $json.construction_year }}\n\n## LISTING PAGE CONTENT (FOR ANALYSIS)##: \n\n<AD_CONTENT>\n{{ $json.ai_input_md }} \n</AD_CONTENT>\n\n## DATA EXTRACTION INSTRUCTIONS\nAnalyse the provided listing content inside <AD_CONTENT> and find and fill in gaps in the input data:\n1. **title**: Full, attractive listing title.\n2. **price**: Total property price (remove \"PLN\", \"PLN\", spaces). Return as a number.\n3. **price_per_m2**: Price per sqm. If not available, calculate: price / area.\n4. **area**: Apartment area (number).\n5. **lot_size**: Exclusive garden or plot size in square meters (`m2`). If the listing gives a garden or plot size, return that value in `m2`. Do not convert to ares. For properties without an exclusive garden or plot, return 0.\n6. **year**: Construction year (if missing, estimate or use 0).\n7. **ai_rating**: Your rating (1-10) based on the above preferences.\n\n## EMAIL SUMMARY PREPARATION INSTRUCTIONS (email_html_content field)\n\nGenerate HTML content to be inserted into the email summary section. Focus on substantive analysis.\n\nHTML content requirements:\n\nAI Verdict: Brief justification of the ai_rating score (np. \"Ideal area and location, but deducting points for gas\").\n\nPros Analysis: List features matching preferences (np. southern location, terrace, boutique building, 2 bathrooms).\n\nRisk Analysis (Cons): Clearly indicate what lowered the rating. Mention \"no elevator\" only when elevator is relevant for that property type. Do not treat lack of elevator or lack of boutique-building evidence as a defect for houses, semi-detached homes, townhouses, segments, or house-like units.\n\nLocation: Provide the most precise location possible (district, street).\n\nStyling: Use clean HTML. Use <strong>, <ul>, <li>. Do not add CSS styles inside this field (they will be overridden by the n8n template).\n\nExample structure inside the string:\n\"<strong>Listing analysis:</strong> The apartment meets the key area requirement (90m2+) and has the desired 3-bedroom layout. \n<ul>\n  <li>✅ South Krakow (Debniki)</li>\n  <li>✅ Terrace and 2 bathrooms</li>\n  <li>❌ Gas heating (rating lowered)</li>\n</ul>\"\n\n## OUTPUT FORMAT (STRICT JSON)\nReturn ONLY a clean JSON object. Do not add any comments or introductions.\nUnder no circumstances modify the EXTERNAL_ID value = {{ $json.external_id }}\n\nEXTERNAL_ID is in text format, type \"string\"\n\n{\n  \"external_id\": \"string\",\n  \"title\": \"string\",\n  \"price\": number,\n  \"price_per_m2\": number,\n  \"area\": number,\n  \"lot_size\": number,\n  \"construction_year\": number,\n  \"ai_rating\": number,\n  \"ai_analysis_html\": \"string\"\n}",
         "options": {}
       },
       "id": "76c7ac3c-4e20-42f9-841c-308ac84267d0",
@@ -73,6 +92,83 @@
     },
     {
       "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "88d46695-57f2-4770-8eb2-c3a354d7f74f",
+      "name": "st-watchdog",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        81232,
+        23024
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE rea_import_runs\nSET status = 'stale',\n    finished_at = NOW()\nWHERE status = 'running'\n  AND started_at < NOW() - INTERVAL '2 hours'\nRETURNING run_id, status, finished_at;",
+        "options": {
+          "queryReplacement": "="
+        }
+      },
+      "id": "567b3436-32f0-46f5-aeec-f765c4d95a15",
+      "name": "sql-mark-stale-runs",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        81456,
+        23024
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "D430FF4ekWv9XfdT",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "85c9b88d-2e98-42ec-984e-b0ad778e09c2",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        81232,
+        23216
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE rea_import_runs\nSET status = 'failed',\n    finished_at = NOW(),\n    notes = CONCAT(COALESCE(notes, ''), CASE WHEN COALESCE(notes, '') = '' THEN '' ELSE E'\\n' END, 'Failed via n8n error trigger')\nWHERE run_id = (\n    SELECT run_id\n    FROM rea_import_runs\n    WHERE workflow_name = 'Real Estate AI Agent'\n      AND status = 'running'\n    ORDER BY started_at DESC\n    LIMIT 1\n)\nRETURNING run_id, status, finished_at;",
+        "options": {
+          "queryReplacement": "="
+        }
+      },
+      "id": "8e3d6ec2-64da-47f0-a524-c97da4f79e2f",
+      "name": "sql-mark-run-failed",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        81456,
+        23216
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "D430FF4ekWv9XfdT",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
         "authentication": "serviceAccount",
         "documentId": {
           "__rl": true,
@@ -132,6 +228,29 @@
         22304
       ],
       "typeVersion": 3
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE rea_import_runs\nSET status = 'completed',\n    finished_at = NOW()\nWHERE run_id = '{{ $(\"tlm-init-run\").first().json.run_id }}'\n  AND status = 'running'\nRETURNING run_id, status, finished_at;",
+        "options": {
+          "queryReplacement": "="
+        }
+      },
+      "id": "70f1d4fd-7dad-4a6a-9519-dfd5e73d4274",
+      "name": "tlm-sql-finalize-run",
+      "type": "n8n-nodes-base.postgres",
+      "position": [
+        83936,
+        22208
+      ],
+      "typeVersion": 2.6,
+      "credentials": {
+        "postgres": {
+          "id": "D430FF4ekWv9XfdT",
+          "name": "Postgres account"
+        }
+      }
     },
     {
       "parameters": {
@@ -205,25 +324,6 @@
     },
     {
       "parameters": {
-        "rule": {
-          "interval": [
-            {
-              "triggerAtHour": 8
-            }
-          ]
-        }
-      },
-      "id": "d0ed7276-3bf4-43be-bb52-8e71f31b35ba",
-      "name": "st-apartment",
-      "type": "n8n-nodes-base.scheduleTrigger",
-      "position": [
-        81232,
-        22240
-      ],
-      "typeVersion": 1.3
-    },
-    {
-      "parameters": {
         "jsCode": "// LEVEL 1: Extract investment/listing URLs from NO search page\nconst items = $input.all();\n\nfunction extractHtml(item) {\n\tif (item.binary?.data?.data) {\n\t\treturn Buffer.from(item.binary.data.data, 'base64').toString('utf-8');\n\t}\n\tif (typeof item === 'string') {\n\t\treturn item;\n\t}\n\tif (typeof item?.json === 'string') {\n\t\treturn item.json;\n\t}\n\tif (item?.json?.data) {\n\t\treturn item.json.data;\n\t}\n\tif (item?.data) {\n\t\treturn item.data;\n\t}\n\treturn JSON.stringify(item?.json || item || '');\n}\n\nfunction cleanText(value) {\n\tif (!value) return '';\n\treturn String(value)\n\t\t.replace(/<[^>]+>/g, ' ')\n\t\t.replace(/&nbsp;|&#160;/g, ' ')\n\t\t.replace(/&amp;/g, '&')\n\t\t.replace(/&quot;/g, '\"')\n\t\t.replace(/&#39;|&apos;/g, \"'\")\n\t\t.replace(/&sup2;/g, '²')\n\t\t.replace(/\\s+/g, ' ')\n\t\t.trim();\n}\n\nfunction toAbsoluteUrl(rawUrl) {\n\tconst value = String(rawUrl || '').trim();\n\tif (!value) return '';\n\tconst absolute = value.startsWith('http')\n\t\t? value\n\t\t: `https://krakow.nieruchomosci-online.pl${value.startsWith('/') ? '' : '/'}${value}`;\n\treturn absolute.split('?')[0].trim();\n}\n\nfunction isInvestmentUrl(url) {\n\tif (!url.includes('nieruchomosci-online.pl')) return false;\n\tif (!/\\.html$/i.test(url)) return false;\n\tif (/\\/szukaj\\.html$/i.test(url)) return false;\n\tif (/\\/(\\d{7,10})\\.html$/i.test(url)) return false;\n\tif (/\\/dodaj\\.html$/i.test(url)) return false;\n\tif (/\\/oferta-dla-/i.test(url)) return false;\n\treturn true;\n}\n\nfunction parseFromHrefFallback(html) {\n\tconst results = [];\n\tconst regex = /href=\"([^\"]+\\.html(?:\\?[^\\\"]*)?)\"/g;\n\tlet match;\n\n\twhile ((match = regex.exec(html)) !== null) {\n\t\tconst url = toAbsoluteUrl(match[1]);\n\t\tif (!url || !isInvestmentUrl(url)) continue;\n\n\t\tconst slug = (url.match(/\\/([^\\/]+)\\.html$/i) || [])[1] || '';\n\t\tresults.push({\n\t\t\turl,\n\t\t\tinvestment_name: cleanText(slug.replace(/-/g, ' ')),\n\t\t\tinvestment_id: slug,\n\t\t});\n\t}\n\n\treturn results;\n}\n\ntry {\n\tconst allResults = [];\n\n\tfor (const item of items) {\n\t\tconst html = extractHtml(item);\n\t\tallResults.push(...parseFromHrefFallback(html));\n\t}\n\n\tconst uniqueMap = new Map();\n\tfor (const entry of allResults) {\n\t\tif (entry?.url) {\n\t\t\tuniqueMap.set(entry.url, entry);\n\t\t}\n\t}\n\n\treturn Array.from(uniqueMap.values()).map((json) => ({ json }));\n} catch (error) {\n\treturn [{ json: { error: `Level 1 parsing error: ${error.message}` } }];\n}\n\n"
       },
       "id": "ff9b0f80-9b45-49b0-8f8a-ffb41a6db154",
@@ -235,6 +335,42 @@
       ],
       "typeVersion": 2,
       "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst timestamp = now.toISOString().replace(/[:.]/g, '').slice(0, 15) + 'Z';\nconst random = Math.random().toString(36).slice(2, 14).toUpperCase();\n\nreturn [{\n  json: {\n    run_id: `${timestamp}__${random}`,\n    workflow_name: 'Real Estate AI Agent',\n    workflow_version: '1.0.2',\n    trigger_source: 'schedule',\n    started_at: now.toISOString(),\n  }\n}];"
+      },
+      "id": "7558de9f-2df0-4946-96ec-e4dff74f6687",
+      "name": "tlm-init-run",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        81456,
+        22336
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO rea_import_runs (\n    run_id,\n    workflow_name,\n    workflow_version,\n    trigger_source,\n    started_at,\n    status,\n    raw_execution_id\n) VALUES (\n    '{{ $json.run_id }}'::text,\n    '{{ String($json.workflow_name || '').replace(/'/g, \"''\") }}'::text,\n    NULLIF('{{ String($json.workflow_version || '').replace(/'/g, \"''\") }}', '')::text,\n    '{{ String($json.trigger_source || 'schedule').replace(/'/g, \"''\") }}'::text,\n    '{{ $json.started_at }}'::timestamptz,\n    'running'::text,\n    NULL\n)\nON CONFLICT (run_id) DO UPDATE SET\n    workflow_name = EXCLUDED.workflow_name,\n    workflow_version = EXCLUDED.workflow_version,\n    trigger_source = EXCLUDED.trigger_source,\n    started_at = EXCLUDED.started_at,\n    status = 'running'\nRETURNING run_id, workflow_name, workflow_version, trigger_source, started_at;",
+        "options": {
+          "queryReplacement": "="
+        }
+      },
+      "id": "69d564d0-8940-4daf-9fcc-9c2cdc33c6f6",
+      "name": "tlm-sql-insert-run",
+      "type": "n8n-nodes-base.postgres",
+      "position": [
+        81680,
+        22336
+      ],
+      "typeVersion": 2.6,
+      "credentials": {
+        "postgres": {
+          "id": "D430FF4ekWv9XfdT",
+          "name": "Postgres account"
+        }
+      }
     },
     {
       "parameters": {
@@ -319,7 +455,7 @@
     },
     {
       "parameters": {
-        "content": "## Real Estate AI Agent\n\n**Version:** `1.0.1`\n**Git SHA:** `e682c4d`\n**Built:** `2026-04-28`\n\nUpload check:\n- workflow name is `Real Estate AI Agent`\n- metadata node is `Workflow Metadata - v1.0.1`",
+        "content": "## Real Estate AI Agent\n\n**Version:** `1.2.0`\n**Git SHA:** `3b36ee2`\n**Built:** `2026-05-19`\n\nUpload check:\n- workflow name is `Real Estate AI Agent`\n- metadata node is `Workflow Metadata - v1.2.0`",
         "height": 240,
         "width": 560,
         "color": 4
@@ -335,10 +471,10 @@
     },
     {
       "parameters": {
-        "jsCode": "return [{\n  json: {\n    \"workflow_name\": \"Real Estate AI Agent\",\n    \"workflow_version\": \"1.0.1\",\n    \"workflow_display_name\": \"Real Estate AI Agent\",\n    \"git_sha\": \"e682c4d\",\n    \"build_date\": \"2026-04-28\",\n    \"workflow_file\": \"n8n/workflows/Real Estate AI Agent.json\",\n    \"version_source\": \"n8n/workflows/Real Estate AI Agent.json\"\n  }\n}];"
+        "jsCode": "return [{\n  json: {\n    \"workflow_name\": \"Real Estate AI Agent\",\n    \"workflow_version\": \"1.2.0\",\n    \"workflow_display_name\": \"Real Estate AI Agent\",\n    \"git_sha\": \"3b36ee2\",\n    \"build_date\": \"2026-05-19\",\n    \"workflow_file\": \"n8n/workflows/Real Estate AI Agent.json\",\n    \"version_source\": \"n8n/workflows/Real Estate AI Agent.json\"\n  }\n}];"
       },
       "id": "workflow-metadata-node",
-      "name": "Workflow Metadata - v1.0.1",
+      "name": "Workflow Metadata - v1.2.0",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -400,7 +536,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const allHtmlInputs = $input.all();\nconst allOffersFromSql = $(\"sql-backfill-ai\").all();\n\nreturn allHtmlInputs.map((htmlItem, index) => ({\n  json: {\n    ...(allOffersFromSql[index] ? allOffersFromSql[index].json : {}),\n    raw_html: htmlItem.json.data || \"No HTML content\"\n  }\n}));"
+        "jsCode": "const allHtmlInputs = $input.all();\nconst allOffersFromSql = $(\"sql-backfill-ai\").all();\n\nfunction decodeHtmlEntities(text) {\n  return String(text || '')\n    .replace(/&nbsp;/gi, ' ')\n    .replace(/&amp;/gi, '&')\n    .replace(/&quot;/gi, '\"')\n    .replace(/&#39;|&apos;/gi, \"'\")\n    .replace(/&lt;/gi, '<')\n    .replace(/&gt;/gi, '>');\n}\n\nfunction htmlToAiText(html) {\n  const source = String(html || '');\n  if (!source) return '';\n\n  let text = source\n    .replace(/<script\\b[^>]*>[\\s\\S]*?<\\/script>/gi, ' ')\n    .replace(/<style\\b[^>]*>[\\s\\S]*?<\\/style>/gi, ' ')\n    .replace(/<noscript\\b[^>]*>[\\s\\S]*?<\\/noscript>/gi, ' ')\n    .replace(/<svg\\b[^>]*>[\\s\\S]*?<\\/svg>/gi, ' ')\n    .replace(/<\\/(p|div|li|h1|h2|h3|h4|h5|h6|tr|section|article|br)>/gi, '\\n')\n    .replace(/<[^>]+>/g, ' ');\n\n  text = decodeHtmlEntities(text)\n    .replace(/\\r/g, '\\n')\n    .replace(/\\n{3,}/g, '\\n\\n')\n    .replace(/[ \\t]{2,}/g, ' ')\n    .trim();\n\n  const MAX_CHARS = 24000;\n  if (text.length > MAX_CHARS) {\n    text = text.slice(0, MAX_CHARS) + '\\n\\n[TRUNCATED_FOR_TOKEN_LIMIT]';\n  }\n\n  return text;\n}\n\nreturn allHtmlInputs.map((htmlItem, index) => ({\n  json: {\n    ...(allOffersFromSql[index] ? allOffersFromSql[index].json : {}),\n    raw_md: htmlToAiText(htmlItem.json.data || 'No content'),\n    ai_input_md: htmlToAiText(htmlItem.json.data || 'No content')\n  }\n}));"
       },
       "id": "7a8961be-4c34-44e6-9347-10a934f9c674",
       "name": "js-backfill-merge-with-desc",
@@ -413,7 +549,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// 1. Get HTML from current input (HTTP Request)\nconst allHtmlInputs = $input.all();\n\n// 2. Get data directly from the preceding SQL node\n// Using .all() to match the entire list of records\nconst allOffersFromSql = $(\"sql-add-offer\").all();\n\nreturn allHtmlInputs.map((htmlItem, index) => {\n  // Get data from DB for the same index\n  const sqlRecord = allOffersFromSql[index] ? allOffersFromSql[index].json : {};\n\n  return {\n    ...sqlRecord, // This carries over ai_rating, external_id and everything else from SQL\n    raw_html: htmlItem.json.data || \"No HTML content\"\n  };\n});"
+        "jsCode": "const allHtmlInputs = $input.all();\nconst allOffersFromSql = $(\"sql-add-offer\").all();\n\nfunction decodeHtmlEntities(text) {\n  return String(text || '')\n    .replace(/&nbsp;/gi, ' ')\n    .replace(/&amp;/gi, '&')\n    .replace(/&quot;/gi, '\"')\n    .replace(/&#39;|&apos;/gi, \"'\")\n    .replace(/&lt;/gi, '<')\n    .replace(/&gt;/gi, '>');\n}\n\nfunction htmlToAiText(html) {\n  const source = String(html || '');\n  if (!source) return '';\n\n  let text = source\n    .replace(/<script\\b[^>]*>[\\s\\S]*?<\\/script>/gi, ' ')\n    .replace(/<style\\b[^>]*>[\\s\\S]*?<\\/style>/gi, ' ')\n    .replace(/<noscript\\b[^>]*>[\\s\\S]*?<\\/noscript>/gi, ' ')\n    .replace(/<svg\\b[^>]*>[\\s\\S]*?<\\/svg>/gi, ' ')\n    .replace(/<\\/(p|div|li|h1|h2|h3|h4|h5|h6|tr|section|article|br)>/gi, '\\n')\n    .replace(/<[^>]+>/g, ' ');\n\n  text = decodeHtmlEntities(text)\n    .replace(/\\r/g, '\\n')\n    .replace(/\\n{3,}/g, '\\n\\n')\n    .replace(/[ \\t]{2,}/g, ' ')\n    .trim();\n\n  const MAX_CHARS = 24000;\n  if (text.length > MAX_CHARS) {\n    text = text.slice(0, MAX_CHARS) + '\\n\\n[TRUNCATED_FOR_TOKEN_LIMIT]';\n  }\n\n  return text;\n}\n\nreturn allHtmlInputs.map((htmlItem, index) => {\n  const sqlRecord = allOffersFromSql[index] ? allOffersFromSql[index].json : {};\n  const htmlContent = htmlItem.json.data || 'No content';\n\n  return {\n    ...sqlRecord,\n    raw_md: htmlToAiText(htmlContent),\n    ai_input_md: htmlToAiText(htmlContent)\n  };\n});"
       },
       "id": "cd03e152-0a69-46cf-90f3-ac92a0eb2af8",
       "name": "js-merge-with-desc",
@@ -426,7 +562,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const items = $input.all();\nconst html = items[0].json.data || \"\";\n\nif (!html || html.length < 100) {\n    return [{ json: { error: \"No HTML content found\" } }];\n}\n\nfunction extractText(html, regex) {\n    const m = html.match(regex);\n    return m ? m[1].trim() : \"\";\n}\n\nfunction parseNumber(str) {\n    if (!str) return 0;\n    const cleaned = str.replace(/\\s/g, \"\").replace(\",\", \".\");\n    const n = parseFloat(cleaned);\n    return isNaN(n) ? 0 : n;\n}\n\nfunction extractSpec(html, label) {\n    const re = new RegExp(\n        '<p class=\"spacificationLabel\">[^<]*?' + label + '[^<]*?</p>\\\\s*<p class=\"spacificationValue\">([\\\\s\\\\S]*?)</p>',\n        \"i\"\n    );\n    const m = html.match(re);\n    if (!m) return \"\";\n    return m[1].replace(/<[^>]+>/g, \"\").trim();\n}\n\nconst refId = extractText(html, /<p class=\"subHeader\">\\s*(.*?)\\s*<\\/p>/);\nconst url = extractText(html, /<link rel=\"canonical\" href=\"([^\"]+)\"/);\n\nlet title = extractText(html, /<h1[^>]*>\\s*([\\s\\S]*?)\\s*<\\/h1>/);\ntitle = title.replace(/<[^>]+>/g, \"\").trim();\n\nconst priceRaw = extractText(html, /<h2 class=\"h3\">\\s*([\\s\\S]*?)\\s*<span class=\"price-for-m2\"/);\nconst price = parseNumber(priceRaw.replace(/<[^>]+>/g, \"\").replace(/PLN|zł/gi, \"\"));\n\nconst ppm2Raw = extractText(html, /class=\"price-for-m2\"[^>]*>([\\s\\S]*?)<\\/span>/);\nconst pricePerM2 = parseNumber(ppm2Raw.replace(/<[^>]+>/g, \"\").replace(/zł za m2?/gi, \"\"));\n\nconst areaRaw = extractSpec(html, \"Powierzchnia\");\nconst area = parseNumber(areaRaw.replace(/m2?/gi, \"\"));\n\nconst roomsRaw = extractSpec(html, \"Ilość pokoi\");\nconst rooms = parseNumber(roomsRaw) || 0;\n\nreturn [{\n    json: {\n        external_id: \"TS-\" + (refId ? refId.replace(/\\//g, \"-\") : Date.now()),\n        category: \"mieszkanie-krakow\",\n        url: url,\n        title: \"Oferta TS: \" + (title || refId),\n        price: price,\n        price_per_m2: pricePerM2,\n        area: area,\n        rooms: rooms,\n        lot_size: 0,\n        construction_year: 0,\n        created_at: new Date().toISOString(),\n        property_portal: 'Tecnocasa',\n        raw_html: html\n    }\n}];\n"
+        "jsCode": "const items = $input.all();\nconst html = items[0].json.data || \"\";\n\nif (!html || html.length < 100) {\n    return [{ json: { error: \"No HTML content found\" } }];\n}\n\nfunction extractText(html, regex) {\n    const m = html.match(regex);\n    return m ? m[1].trim() : \"\";\n}\n\nfunction parseNumber(str) {\n    if (!str) return 0;\n    const cleaned = str.replace(/\\s/g, \"\").replace(\",\", \".\");\n    const n = parseFloat(cleaned);\n    return isNaN(n) ? 0 : n;\n}\n\nfunction extractSpec(html, label) {\n    const re = new RegExp(\n        '<p class=\"spacificationLabel\">[^<]*?' + label + '[^<]*?</p>\\\\s*<p class=\"spacificationValue\">([\\\\s\\\\S]*?)</p>',\n        \"i\"\n    );\n    const m = html.match(re);\n    if (!m) return \"\";\n    return m[1].replace(/<[^>]+>/g, \"\").trim();\n}\n\nconst refId = extractText(html, /<p class=\"subHeader\">\\s*(.*?)\\s*<\\/p>/);\nconst url = extractText(html, /<link rel=\"canonical\" href=\"([^\"]+)\"/);\n\nlet title = extractText(html, /<h1[^>]*>\\s*([\\s\\S]*?)\\s*<\\/h1>/);\ntitle = title.replace(/<[^>]+>/g, \"\").trim();\n\nconst priceRaw = extractText(html, /<h2 class=\"h3\">\\s*([\\s\\S]*?)\\s*<span class=\"price-for-m2\"/);\nconst price = parseNumber(priceRaw.replace(/<[^>]+>/g, \"\").replace(/PLN|zł/gi, \"\"));\n\nconst ppm2Raw = extractText(html, /class=\"price-for-m2\"[^>]*>([\\s\\S]*?)<\\/span>/);\nconst pricePerM2 = parseNumber(ppm2Raw.replace(/<[^>]+>/g, \"\").replace(/zł za m2?/gi, \"\"));\n\nconst areaRaw = extractSpec(html, \"Powierzchnia\");\nconst area = parseNumber(areaRaw.replace(/m2?/gi, \"\"));\n\nconst roomsRaw = extractSpec(html, \"Ilość pokoi\");\nconst rooms = parseNumber(roomsRaw) || 0;\n\nreturn [{\n    json: {\n        external_id: \"TS-\" + (refId ? refId.replace(/\\//g, \"-\") : Date.now()),\n        category: \"mieszkanie-krakow\",\n        url: url,\n        title: \"Oferta TS: \" + (title || refId),\n        price: price,\n        price_per_m2: pricePerM2,\n        area: area,\n        rooms: rooms,\n        lot_size: 0,\n        construction_year: 0,\n        created_at: new Date().toISOString(),\n        property_portal: 'Tecnocasa',\n        raw_md: html\n    }\n}];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -482,7 +618,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH incoming AS (\n    SELECT\n        '{{ $json.external_id }}'::text AS external_id,\n        '{{ $json.category || 'mieszkanie-krakow' }}'::text AS category,\n        '{{ $json.url }}'::text AS url,\n        '{{ String($json.title || '').replace(/'/g, \"''\") }}'::text AS title,\n        {{ Number($json.price) || 0 }}::numeric AS price,\n        {{ Number($json.price_per_m2) || 0 }}::numeric AS price_per_m2,\n        {{ Number($json.area) || 0 }}::numeric AS area,\n        {{ Number($json.lot_size) || 0 }}::numeric AS lot_size,\n        {{ Number($json.construction_year) || 0 }}::integer AS construction_year,\n        '{{ $json.created_at || new Date().toISOString() }}'::timestamp AS created_at,\n        NOW()::timestamp AS last_seen_at\n)\nINSERT INTO rea_property_offers (\n    external_id, category, url, title,\n    price, price_per_m2, area, lot_size,\n    construction_year, ai_rating, user_rating,\n    created_at, last_seen_at\n)\nSELECT\n    external_id, category, url, title,\n    price, price_per_m2, area, lot_size,\n    construction_year, NULL, 'pending',\n    created_at, last_seen_at\nFROM incoming\nWHERE\n    NULLIF(BTRIM(external_id), '') IS NOT NULL\n    AND LOWER(BTRIM(external_id)) <> 'undefined'\n    AND NULLIF(BTRIM(url), '') IS NOT NULL\n    AND LOWER(BTRIM(url)) <> 'undefined'\n    AND BTRIM(url) ~* '^https?://'\nON CONFLICT (external_id) DO UPDATE SET\n    category = EXCLUDED.category,\n    url = EXCLUDED.url,\n    title = COALESCE(NULLIF(EXCLUDED.title, ''), rea_property_offers.title),\n    price = CASE WHEN COALESCE(EXCLUDED.price, 0) > 0 THEN EXCLUDED.price ELSE rea_property_offers.price END,\n    price_per_m2 = CASE WHEN COALESCE(EXCLUDED.price_per_m2, 0) > 0 THEN EXCLUDED.price_per_m2 ELSE rea_property_offers.price_per_m2 END,\n    area = CASE WHEN COALESCE(EXCLUDED.area, 0) > 0 THEN EXCLUDED.area ELSE rea_property_offers.area END,\n    lot_size = CASE WHEN COALESCE(EXCLUDED.lot_size, 0) > 0 THEN EXCLUDED.lot_size ELSE rea_property_offers.lot_size END,\n    construction_year = CASE WHEN COALESCE(EXCLUDED.construction_year, 0) > 0 THEN EXCLUDED.construction_year ELSE rea_property_offers.construction_year END,\n    last_seen_at = EXCLUDED.last_seen_at\nRETURNING *;",
+        "query": "WITH incoming AS (\n    SELECT\n        '{{ $json.external_id }}'::text AS external_id,\n        '{{ $json.category || 'mieszkanie-krakow' }}'::text AS category,\n        '{{ $json.url }}'::text AS url,\n        '{{ String($json.title || '').replace(/'/g, \"''\") }}'::text AS title,\n        {{ Number($json.price) || 0 }}::numeric AS price,\n        {{ Number($json.price_per_m2) || 0 }}::numeric AS price_per_m2,\n        {{ Number($json.area) || 0 }}::numeric AS area,\n        {{ Number($json.lot_size) || 0 }}::numeric AS lot_size,\n        {{ Number($json.construction_year) || 0 }}::integer AS construction_year,\n        '{{ String($json.property_portal || '').replace(/'/g, \"''\") }}'::text AS property_portal,\n        '{{ String($json.district || '').replace(/'/g, \"''\") }}'::text AS district,\n        '{{ String($json.location_text || '').replace(/'/g, \"''\") }}'::text AS location_text,\n        '{{ $json.created_at || new Date().toISOString() }}'::timestamp AS created_at,\n        NOW()::timestamp AS last_seen_at\n)\nINSERT INTO rea_property_offers (\n    external_id, category, url, title,\n    price, price_per_m2, area, lot_size,\n    construction_year, ai_rating, user_rating,\n    property_portal, district, location_text,\n    created_at, last_seen_at\n)\nSELECT\n    external_id, category, url, title,\n    price, price_per_m2, area, lot_size,\n    construction_year, NULL, 'pending',\n    NULLIF(property_portal, ''), NULLIF(district, ''), NULLIF(location_text, ''),\n    created_at, last_seen_at\nFROM incoming\nWHERE\n    NULLIF(BTRIM(external_id), '') IS NOT NULL\n    AND LOWER(BTRIM(external_id)) <> 'undefined'\n    AND NULLIF(BTRIM(url), '') IS NOT NULL\n    AND LOWER(BTRIM(url)) <> 'undefined'\n    AND BTRIM(url) ~* '^https?://'\nON CONFLICT (external_id) DO UPDATE SET\n    category = EXCLUDED.category,\n    url = EXCLUDED.url,\n    title = COALESCE(NULLIF(EXCLUDED.title, ''), rea_property_offers.title),\n    price = CASE WHEN COALESCE(EXCLUDED.price, 0) > 0 THEN EXCLUDED.price ELSE rea_property_offers.price END,\n    price_per_m2 = CASE WHEN COALESCE(EXCLUDED.price_per_m2, 0) > 0 THEN EXCLUDED.price_per_m2 ELSE rea_property_offers.price_per_m2 END,\n    area = CASE WHEN COALESCE(EXCLUDED.area, 0) > 0 THEN EXCLUDED.area ELSE rea_property_offers.area END,\n    lot_size = CASE WHEN COALESCE(EXCLUDED.lot_size, 0) > 0 THEN EXCLUDED.lot_size ELSE rea_property_offers.lot_size END,\n    construction_year = CASE WHEN COALESCE(EXCLUDED.construction_year, 0) > 0 THEN EXCLUDED.construction_year ELSE rea_property_offers.construction_year END,\n    property_portal = COALESCE(NULLIF(EXCLUDED.property_portal, ''), rea_property_offers.property_portal),\n    district = COALESCE(NULLIF(EXCLUDED.district, ''), rea_property_offers.district),\n    location_text = COALESCE(NULLIF(EXCLUDED.location_text, ''), rea_property_offers.location_text),\n    last_seen_at = EXCLUDED.last_seen_at\nRETURNING *;",
         "options": {
           "queryReplacement": "="
         }
@@ -562,14 +698,42 @@
     },
     {
       "parameters": {
-        "jsCode": "const items = $input.all();\n\nconst MIN_AREA_SQM = 90;\n\nconst isNonEmpty = (value) => String(value ?? '').trim() !== '';\nconst isUndefinedLiteral = (value) => String(value ?? '').trim().toLowerCase() === 'undefined';\nconst isHttpUrl = (value) => /^https?:\\/\\//i.test(String(value ?? '').trim());\n\nreturn items\n  .map((item) => ({ ...item, json: { ...item.json } }))\n  .filter((item) => {\n    const externalId = item.json.external_id;\n    const url = item.json.url;\n\n    if (!isNonEmpty(externalId) || isUndefinedLiteral(externalId)) return false;\n    if (!isNonEmpty(url) || isUndefinedLiteral(url)) return false;\n    if (!isHttpUrl(url)) return false;\n\n    // Reject offers below minimum area when area is known\n    const area = Number(item.json.area);\n    if (area > 0 && area < MIN_AREA_SQM) return false;\n\n    return true;\n  });"
+        "jsCode": "const items = $input.all();\nconst run = $node[\"tlm-init-run\"].json;\n\nreturn items.map(item => ({\n  ...item,\n  json: {\n    ...item.json,\n    run_id: run.run_id\n  }\n}));"
+      },
+      "id": "a1b2c3d4-e5f6-47g8-h9i0-j1k2l3m4n5o6",
+      "name": "tlm-attach-run-id",
+      "type": "n8n-nodes-base.code",
+      "outputs": 1,
+      "position": [
+        82464,
+        22192
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nconst MIN_AREA_SQM = 90;\n\nconst isNonEmpty = (value) => String(value ?? '').trim() !== '';\nconst isUndefinedLiteral = (value) => String(value ?? '').trim().toLowerCase() === 'undefined';\nconst isHttpUrl = (value) => /^https?:\\/\\//i.test(String(value ?? '').trim());\n\nfunction classifyItem(item) {\n  const externalId = item.json.external_id;\n  const url = item.json.url;\n\n  if (!isNonEmpty(externalId) || isUndefinedLiteral(externalId)) {\n    return 'invalid_external_id';\n  }\n  if (!isNonEmpty(url) || isUndefinedLiteral(url)) {\n    return 'invalid_url';\n  }\n  if (!isHttpUrl(url)) {\n    return 'invalid_url';\n  }\n\n  const area = Number(item.json.area);\n  if (area > 0 && area < MIN_AREA_SQM) {\n    return 'below_area';\n  }\n\n  return null;\n}\n\nreturn items\n  .filter((item) => classifyItem(item) === null)\n  .map((item) => ({ ...item, json: { ...item.json } }));"
       },
       "id": "6e08450b-431f-4049-9fca-721677def6e2",
       "name": "js-validate-offer-before-sql",
       "type": "n8n-nodes-base.code",
+      "outputs": 1,
       "position": [
         82576,
         22208
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nconst MIN_AREA_SQM = 90;\n\nconst isNonEmpty = (value) => String(value ?? '').trim() !== '';\nconst isUndefinedLiteral = (value) => String(value ?? '').trim().toLowerCase() === 'undefined';\nconst isHttpUrl = (value) => /^https?:\\/\\//i.test(String(value ?? '').trim());\n\nfunction classifyItem(item) {\n  const externalId = item.json.external_id;\n  const url = item.json.url;\n\n  if (!isNonEmpty(externalId) || isUndefinedLiteral(externalId)) {\n    return 'invalid_external_id';\n  }\n  if (!isNonEmpty(url) || isUndefinedLiteral(url)) {\n    return 'invalid_url';\n  }\n  if (!isHttpUrl(url)) {\n    return 'invalid_url';\n  }\n\n  const area = Number(item.json.area);\n  if (area > 0 && area < MIN_AREA_SQM) {\n    return 'below_area';\n  }\n\n  return null;\n}\n\nreturn items.map((item) => {\n  const reason = classifyItem(item);\n\n  return {\n    json: {\n      run_id: item.json.run_id,\n      stage_key: 'validate_before_sql',\n      stage_order: 4,\n      external_id: item.json.external_id,\n      url: item.json.url,\n      event_type: reason ? 'dropped' : 'passed',\n      event_reason: reason || null,\n      payload: JSON.stringify(reason ? { reason } : {}),\n    }\n  };\n});"
+      },
+      "id": "0a10c1f4-cf76-4fac-9f4d-f95ba344097a",
+      "name": "tlm-validate-events",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        82576,
+        22400
       ],
       "typeVersion": 2
     },
@@ -642,7 +806,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const raw = String($json.output || '').trim();\n\nconst parseNumber = (value, fallback = 0) => {\n  const normalized = String(value ?? '').trim();\n  if (!normalized) return fallback;\n\n  const num = Number(normalized.replace(',', '.'));\n  return Number.isFinite(num) ? num : fallback;\n};\n\nconst parseNullableNumber = (value) => {\n  const normalized = String(value ?? '').trim();\n  if (!normalized) return null;\n\n  const num = Number(normalized.replace(',', '.'));\n  return Number.isFinite(num) ? num : null;\n};\n\nconst stripFences = (text) => {\n  const trimmed = String(text || '').trim();\n  const fenceMatch = trimmed.match(/```(?:json)?\\s*([\\s\\S]*?)\\s*```/i);\n  return fenceMatch ? fenceMatch[1].trim() : trimmed;\n};\n\nconst escapeHtml = (text) =>\n  String(text || '')\n    .replace(/&/g, '&amp;')\n    .replace(/</g, '&lt;')\n    .replace(/>/g, '&gt;')\n    .replace(/\"/g, '&quot;')\n    .replace(/'/g, '&#39;');\n\nconst inferExternalIdFromRaw = (text) => {\n  const source = stripFences(text);\n  const match = source.match(/\"external_id\"\\s*:\\s*\"([^\"]+)\"/i);\n  return String(match?.[1] || '').trim();\n};\n\nconst inferAiRatingFromRaw = (text) => {\n  const source = stripFences(text);\n  const match = source.match(/\"ai_rating\"\\s*:\\s*([0-9]{1,2})/i);\n  return match ? Number(match[1]) : null;\n};\n\nconst inferAiAnalysisHtmlFromRaw = (text) => {\n  const source = stripFences(text);\n  const marker = '\"ai_analysis_html\"';\n  const markerIndex = source.toLowerCase().indexOf(marker.toLowerCase());\n  if (markerIndex === -1) return '';\n\n  const afterMarker = source.slice(markerIndex);\n  const firstQuote = afterMarker.indexOf('\"', marker.length);\n  if (firstQuote === -1) return '';\n\n  const valuePart = afterMarker.slice(firstQuote + 1);\n  const endQuoteMatch = valuePart.match(/\"\\s*(,|\\})/);\n  const quoted = endQuoteMatch ? valuePart.slice(0, endQuoteMatch.index) : valuePart;\n\n  const normalized = quoted\n    .replace(/\\\\n/g, '\\n')\n    .replace(/\\\\r/g, '\\r')\n    .replace(/\\\\t/g, '\\t')\n    .replace(/\\\\\"/g, '\"')\n    .replace(/\\\\\\//g, '/');\n\n  return String(normalized || '').trim();\n};\n\nconst buildCurrentParsed = () => {\n  const currentAiRating = parseNullableNumber($json.ai_rating);\n  const rawExternalId = inferExternalIdFromRaw(raw);\n\n  return {\n    external_id: String($json.external_id || rawExternalId || '').trim(),\n    title: String($json.title || '').trim(),\n    price: parseNumber($json.price, 0),\n    price_per_m2: parseNumber($json.price_per_m2, 0),\n    area: parseNumber($json.area, 0),\n    lot_size: parseNumber($json.lot_size, 0),\n    construction_year: Math.round(parseNumber($json.construction_year, 0)),\n    ai_rating: currentAiRating === null ? null : Math.round(currentAiRating),\n    ai_analysis_html: String($json.ai_analysis_html || '').trim(),\n  };\n};\n\nconst buildFailure = (reason, details = {}) => ([{\n  json: {\n    ...$json,\n    ai_parse_valid: false,\n    ai_parse_error: reason,\n    ai_parse_details: details,\n    ai_parsed: buildCurrentParsed(),\n  },\n}]);\n\nif (!raw) {\n  return buildFailure('empty_output');\n}\n\nconst parseJson = (text) => {\n  const candidate = stripFences(text);\n\n  try {\n    return JSON.parse(candidate);\n  } catch (_) {\n    const objectMatch = candidate.match(/\\{[\\s\\S]*\\}/);\n    if (!objectMatch) return null;\n\n    try {\n      return JSON.parse(objectMatch[0]);\n    } catch (_) {\n      return null;\n    }\n  }\n};\n\nconst expectedExternalId = String($json.external_id || '').trim();\nconst parsed = parseJson(raw);\n\nlet parsedExternalId = '';\nlet parsedTitle = '';\nlet parsedPrice = parseNumber($json.price, 0);\nlet parsedPricePerM2 = parseNumber($json.price_per_m2, 0);\nlet parsedArea = parseNumber($json.area, 0);\nlet parsedLotSize = parseNumber($json.lot_size, 0);\nlet parsedConstructionYear = Math.round(parseNumber($json.construction_year, 0));\nlet aiRating = parseNullableNumber($json.ai_rating);\nlet aiAnalysisHtml = String($json.ai_analysis_html || '').trim();\nlet parseError = null;\nlet parseDetails = null;\n\nif (parsed && typeof parsed === 'object') {\n  parsedExternalId = String(parsed.external_id || '').trim();\n  parsedTitle = String(parsed.title || '').trim();\n  parsedPrice = parseNumber(parsed.price, parsedPrice);\n  parsedPricePerM2 = parseNumber(parsed.price_per_m2, parsedPricePerM2);\n  parsedArea = parseNumber(parsed.area, parsedArea);\n  parsedLotSize = parseNumber(parsed.lot_size, parsedLotSize);\n  parsedConstructionYear = Math.round(parseNumber(parsed.construction_year, parsedConstructionYear));\n  aiRating = parseNullableNumber(parsed.ai_rating);\n  aiAnalysisHtml = String(parsed.ai_analysis_html || aiAnalysisHtml).trim();\n} else {\n  parsedExternalId = inferExternalIdFromRaw(raw);\n  parsedTitle = String($json.title || '').trim();\n  const recoveredRating = inferAiRatingFromRaw(raw);\n  aiRating = Number.isFinite(recoveredRating) ? recoveredRating : aiRating;\n  aiAnalysisHtml = inferAiAnalysisHtmlFromRaw(raw) || aiAnalysisHtml;\n\n  parseError = 'invalid_json_recovered';\n  parseDetails = {\n    recovered_external_id: parsedExternalId || null,\n    recovered_ai_rating: Number.isFinite(aiRating) ? aiRating : null,\n  };\n}\n\nif (!parsedExternalId) {\n  parsedExternalId = expectedExternalId;\n}\n\nif (!parsedExternalId) {\n  return buildFailure('missing_external_id');\n}\n\nif (expectedExternalId && parsedExternalId !== expectedExternalId) {\n  return buildFailure('external_id_mismatch', {\n    expected_external_id: expectedExternalId,\n    parsed_external_id: parsedExternalId,\n  });\n}\n\nconst roundedRating = aiRating === null ? null : Math.round(parseNumber(aiRating, NaN));\nif (!Number.isFinite(roundedRating) || roundedRating < 1 || roundedRating > 10) {\n  return buildFailure('invalid_ai_rating', {\n    parsed_ai_rating: aiRating,\n  });\n}\n\nif (!aiAnalysisHtml) {\n  const fallbackPreview = stripFences(raw).slice(0, 3500);\n  aiAnalysisHtml = `<pre>${escapeHtml(fallbackPreview)}</pre>`;\n  if (!parseError) {\n    parseError = 'missing_ai_analysis_html_recovered';\n    parseDetails = { recovered_from_raw_preview: true };\n  }\n}\n\nreturn [{\n  json: {\n    ...$json,\n    ai_parse_valid: parseError ? false : true,\n    ai_parse_error: parseError,\n    ai_parse_details: parseDetails,\n    ai_parsed: {\n      external_id: parsedExternalId,\n      title: parsedTitle || String($json.title || '').trim() || 'Oferta: ' + parsedExternalId,\n      price: parsedPrice,\n      price_per_m2: parsedPricePerM2,\n      area: parsedArea,\n      lot_size: parsedLotSize,\n      construction_year: parsedConstructionYear,\n      ai_rating: roundedRating,\n      ai_analysis_html: aiAnalysisHtml,\n    },\n  },\n}];\n"
+        "jsCode": "const raw = String($json.output || '').trim();\n\nconst parseNumber = (value, fallback = 0) => {\n  const normalized = String(value ?? '').trim();\n  if (!normalized) return fallback;\n\n  const cleaned = normalized\n    .replace(/\\u00a0/g, '')\n    .replace(/\\s+/g, '')\n    .replace(',', '.')\n    .replace(/[^\\d.-]/g, '');\n  const num = Number(cleaned);\n  return Number.isFinite(num) ? num : fallback;\n};\n\nconst parseNullableNumber = (value) => {\n  const normalized = String(value ?? '').trim();\n  if (!normalized) return null;\n\n  const num = parseNumber(normalized, NaN);\n  return Number.isFinite(num) ? num : null;\n};\n\nconst stripFences = (text) => {\n  const trimmed = String(text || '').trim();\n  const fenceMatch = trimmed.match(/```(?:json)?\\s*([\\s\\S]*?)\\s*```/i);\n  return fenceMatch ? fenceMatch[1].trim() : trimmed;\n};\n\nconst stripTags = (text) => String(text || '').replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ').trim();\n\nconst inferConstructionYearFromHtml = (html) => {\n  const source = String(html || '');\n  if (!source) return null;\n\n  const patterns = [\n    /Rok\\s+budowy[^0-9]{0,20}(20\\d{2}|19\\d{2})/i,\n    /\"Rok\\s+budowy\"\\s*,\\s*\"value\"\\s*:\\s*\"(20\\d{2}|19\\d{2})\"/i,\n    /built[^0-9]{0,20}(20\\d{2}|19\\d{2})/i,\n    /construction[_\\s-]*year[^0-9]{0,20}(20\\d{2}|19\\d{2})/i,\n  ];\n\n  for (const pattern of patterns) {\n    const match = source.match(pattern);\n    if (!match) continue;\n    const value = parseNullableNumber(match[1]);\n    if (value !== null) return value;\n  }\n\n  return null;\n};\n\nconst inferLotSizeSqmFromText = (text) => {\n  const source = String(text || '');\n  if (!source) return null;\n\n  const patterns = [\n    /(?:private\\s+garden|garden|ogr[oó]d|dzia[łl]ka)[^\\d]{0,40}([\\d][\\d\\s.,]*)\\s*m(?:²|2)\\b/i,\n    /([\\d][\\d\\s.,]*)\\s*m(?:²|2)\\b[^\\n\\r]{0,40}(?:private\\s+garden|garden|ogr[oó]d|dzia[łl]ka)/i,\n  ];\n\n  for (const pattern of patterns) {\n    const match = source.match(pattern);\n    if (!match) continue;\n    const value = parseNullableNumber(match[1]);\n    if (value !== null && value > 0) return value;\n  }\n\n  return null;\n};\n\nconst normalizeLotSizeSqm = (lotSize, sources = []) => {\n  const current = parseNumber(lotSize, 0);\n  const inferredSqm = sources\n    .map((source) => inferLotSizeSqmFromText(source))\n    .find((value) => Number.isFinite(value) && value > 0);\n\n  if (current <= 0) {\n    return inferredSqm ?? 0;\n  }\n\n  if (!inferredSqm) {\n    return current;\n  }\n\n  const looksLikeAres = current < 20 && Math.abs(current * 100 - inferredSqm) <= Math.max(5, inferredSqm * 0.05);\n  if (looksLikeAres) {\n    return Math.round(inferredSqm * 100) / 100;\n  }\n\n  return current;\n};\n\nconst escapeHtml = (text) =>\n  String(text || '')\n    .replace(/&/g, '&amp;')\n    .replace(/</g, '&lt;')\n    .replace(/>/g, '&gt;')\n    .replace(/\"/g, '&quot;')\n    .replace(/'/g, '&#39;');\n\nconst inferQuotedFieldFromRaw = (text, fieldName) => {\n  const source = stripFences(text);\n  const patterns = [\n    new RegExp(`\"${fieldName}\"\\s*:\\s*\"([^\"]+)\"`, 'i'),\n    new RegExp(`${fieldName}\\s*:\\s*\"([^\"]+)\"`, 'i'),\n    new RegExp(`${fieldName}\\s*:\\s*([^,\\n\\r}]+)`, 'i'),\n  ];\n\n  for (const pattern of patterns) {\n    const match = source.match(pattern);\n    if (!match) continue;\n    return String(match[1] || '').replace(/\\\\n/g, '\\n').replace(/\\\\\"/g, '\"').trim();\n  }\n\n  return '';\n};\n\nconst inferNumericFieldFromRaw = (text, fieldName) => {\n  const source = stripFences(text);\n  const patterns = [\n    new RegExp(`\"${fieldName}\"\\s*:\\s*([-+]?[0-9][0-9\\s.,]*)`, 'i'),\n    new RegExp(`${fieldName}\\s*:\\s*([-+]?[0-9][0-9\\s.,]*)`, 'i'),\n  ];\n\n  for (const pattern of patterns) {\n    const match = source.match(pattern);\n    if (!match) continue;\n    const value = parseNullableNumber(match[1]);\n    if (value !== null) return value;\n  }\n\n  return null;\n};\n\nconst inferExternalIdFromRaw = (text) => {\n  const quoted = inferQuotedFieldFromRaw(text, 'external_id');\n  if (quoted) return quoted;\n\n  const source = stripFences(text);\n  const fallback = source.match(/\\b([A-Z]{1,6}-\\d{4,})\\b/);\n  return fallback ? String(fallback[1]).trim() : '';\n};\nconst inferTitleFromRaw = (text) => inferQuotedFieldFromRaw(text, 'title');\nconst inferAiRatingFromRaw = (text) => inferNumericFieldFromRaw(text, 'ai_rating');\nconst inferPriceFromRaw = (text) => inferNumericFieldFromRaw(text, 'price');\nconst inferPricePerM2FromRaw = (text) => inferNumericFieldFromRaw(text, 'price_per_m2');\nconst inferAreaFromRaw = (text) => inferNumericFieldFromRaw(text, 'area');\nconst inferLotSizeFromRaw = (text) => inferNumericFieldFromRaw(text, 'lot_size');\nconst inferConstructionYearFromRaw = (text) => inferNumericFieldFromRaw(text, 'construction_year') ?? inferNumericFieldFromRaw(text, 'year');\n\nconst inferAiAnalysisHtmlFromRaw = (text) => {\n  const source = stripFences(text);\n  const marker = '\"ai_analysis_html\"';\n  const markerIndex = source.toLowerCase().indexOf(marker.toLowerCase());\n  if (markerIndex === -1) return '';\n\n  const afterMarker = source.slice(markerIndex);\n  const firstQuote = afterMarker.indexOf('\"', marker.length);\n  if (firstQuote === -1) return '';\n\n  const valuePart = afterMarker.slice(firstQuote + 1);\n  const endQuoteMatch = valuePart.match(/\"\\s*(,|\\})/);\n  const quoted = endQuoteMatch ? valuePart.slice(0, endQuoteMatch.index) : valuePart;\n\n  const normalized = quoted\n    .replace(/\\\\n/g, '\\n')\n    .replace(/\\\\r/g, '\\r')\n    .replace(/\\\\t/g, '\\t')\n    .replace(/\\\\\"/g, '\"')\n    .replace(/\\\\\\//g, '/');\n\n  return String(normalized || '').trim();\n};\n\nconst buildCurrentParsed = () => {\n  const currentAiRating = parseNullableNumber($json.ai_rating);\n  const rawExternalId = inferExternalIdFromRaw(raw);\n\n  return {\n    external_id: String($json.external_id || rawExternalId || '').trim(),\n    title: String($json.title || inferTitleFromRaw(raw) || '').trim(),\n    price: inferPriceFromRaw(raw) ?? parseNumber($json.price, 0),\n    price_per_m2: inferPricePerM2FromRaw(raw) ?? parseNumber($json.price_per_m2, 0),\n    area: inferAreaFromRaw(raw) ?? parseNumber($json.area, 0),\n    lot_size: inferLotSizeFromRaw(raw) ?? parseNumber($json.lot_size, 0),\n    construction_year: Math.round(inferConstructionYearFromRaw(raw) ?? parseNumber($json.construction_year, 0)),\n    ai_rating: currentAiRating === null ? (Number.isFinite(inferAiRatingFromRaw(raw)) ? Math.round(inferAiRatingFromRaw(raw)) : null) : Math.round(currentAiRating),\n    ai_analysis_html: String($json.ai_analysis_html || inferAiAnalysisHtmlFromRaw(raw) || '').trim(),\n  };\n};\n\nconst buildFailure = (reason, details = {}) => ([{\n  json: {\n    ...$json,\n    ai_parse_valid: false,\n    ai_parse_error: reason,\n    ai_parse_details: details,\n    ai_parsed: buildCurrentParsed(),\n  },\n}]);\n\nif (!raw) {\n  return buildFailure('empty_output');\n}\n\nconst parseJson = (text) => {\n  const candidate = stripFences(text);\n\n  try {\n    return JSON.parse(candidate);\n  } catch (_) {\n    const objectMatch = candidate.match(/\\{[\\s\\S]*\\}/);\n    if (!objectMatch) return null;\n\n    try {\n      return JSON.parse(objectMatch[0]);\n    } catch (_) {\n      return null;\n    }\n  }\n};\n\nconst expectedExternalId = String($json.external_id || '').trim();\nconst parsed = parseJson(raw);\n\nlet parsedExternalId = '';\nlet parsedTitle = '';\nlet parsedPrice = parseNumber($json.price, 0);\nlet parsedPricePerM2 = parseNumber($json.price_per_m2, 0);\nlet parsedArea = parseNumber($json.area, 0);\nlet parsedLotSize = parseNumber($json.lot_size, 0);\nlet parsedConstructionYear = Math.round(parseNumber($json.construction_year, 0));\nlet aiRating = parseNullableNumber($json.ai_rating);\nlet aiAnalysisHtml = String($json.ai_analysis_html || '').trim();\nlet parseError = null;\nlet parseDetails = null;\n\nif (parsed && typeof parsed === 'object') {\n  parsedExternalId = String(parsed.external_id || '').trim();\n  parsedTitle = String(parsed.title || '').trim();\n  parsedPrice = parseNumber(parsed.price, parsedPrice);\n  parsedPricePerM2 = parseNumber(parsed.price_per_m2, parsedPricePerM2);\n  parsedArea = parseNumber(parsed.area, parsedArea);\n  parsedLotSize = parseNumber(parsed.lot_size, parsedLotSize);\n  parsedConstructionYear = Math.round(parseNumber(parsed.construction_year, parsedConstructionYear));\n  aiRating = parseNullableNumber(parsed.ai_rating);\n  aiAnalysisHtml = String(parsed.ai_analysis_html || aiAnalysisHtml).trim();\n} else {\n  parsedExternalId = inferExternalIdFromRaw(raw);\n  parsedTitle = inferTitleFromRaw(raw) || String($json.title || '').trim();\n  parsedPrice = inferPriceFromRaw(raw) ?? parsedPrice;\n  parsedPricePerM2 = inferPricePerM2FromRaw(raw) ?? parsedPricePerM2;\n  parsedArea = inferAreaFromRaw(raw) ?? parsedArea;\n  parsedLotSize = inferLotSizeFromRaw(raw) ?? parsedLotSize;\n  parsedConstructionYear = Math.round(inferConstructionYearFromRaw(raw) ?? parsedConstructionYear);\n  const recoveredRating = inferAiRatingFromRaw(raw);\n  aiRating = Number.isFinite(recoveredRating) ? recoveredRating : aiRating;\n  aiAnalysisHtml = inferAiAnalysisHtmlFromRaw(raw) || aiAnalysisHtml;\n\n  parseError = 'invalid_json_recovered';\n  parseDetails = {\n    recovered_external_id: parsedExternalId || null,\n    recovered_title: parsedTitle || null,\n    recovered_price: parsedPrice || null,\n    recovered_price_per_m2: parsedPricePerM2 || null,\n    recovered_area: parsedArea || null,\n    recovered_lot_size: parsedLotSize || null,\n    recovered_construction_year: parsedConstructionYear || null,\n    recovered_ai_rating: Number.isFinite(aiRating) ? aiRating : null,\n  };\n}\n\nif (!parsedExternalId) {\n  parsedExternalId = expectedExternalId;\n}\n\nif (!parsedExternalId) {\n  return buildFailure('missing_external_id');\n}\n\nif (expectedExternalId && parsedExternalId !== expectedExternalId) {\n  return buildFailure('external_id_mismatch', {\n    expected_external_id: expectedExternalId,\n    parsed_external_id: parsedExternalId,\n  });\n}\n\nconst roundedRating = aiRating === null ? null : Math.round(parseNumber(aiRating, NaN));\nif (!Number.isFinite(roundedRating) || roundedRating < 1 || roundedRating > 10) {\n  return buildFailure('invalid_ai_rating', {\n    parsed_ai_rating: aiRating,\n  });\n}\n\nif (!aiAnalysisHtml) {\n  const fallbackPreview = stripFences(raw).slice(0, 3500);\n  aiAnalysisHtml = `<pre>${escapeHtml(fallbackPreview)}</pre>`;\n  if (!parseError) {\n    parseError = 'missing_ai_analysis_html_recovered';\n    parseDetails = { recovered_from_raw_preview: true };\n  }\n}\n\nif (!parsedConstructionYear || parsedConstructionYear <= 0) {\n  parsedConstructionYear = Math.round(\n    inferConstructionYearFromHtml($json.raw_md) ??\n      inferConstructionYearFromHtml(aiAnalysisHtml) ??\n      parsedConstructionYear\n  );\n}\n\nparsedLotSize = normalizeLotSizeSqm(parsedLotSize, [$json.raw_md, aiAnalysisHtml, raw]);\n\nconst fallbackTitle = String($json.title || '').trim();\nconst shouldReplaceGenericTitle = !parsedTitle || /^Oferta:\\s/i.test(parsedTitle);\nconst analysisText = stripTags(aiAnalysisHtml);\nconst titleFromAnalysis = analysisText.match(/Lokalizacja:\\s*([^\\.]+)\\./i)?.[1]?.trim() || '';\n\nreturn [{\n  json: {\n    ...$json,\n    ai_parse_valid: parseError ? false : true,\n    ai_parse_error: parseError,\n    ai_parse_details: parseDetails,\n    ai_parsed: {\n      external_id: parsedExternalId,\n      title: (shouldReplaceGenericTitle ? titleFromAnalysis : parsedTitle) || parsedTitle || fallbackTitle || 'Oferta: ' + parsedExternalId,\n      price: parsedPrice,\n      price_per_m2: parsedPricePerM2,\n      area: parsedArea,\n      lot_size: parsedLotSize,\n      construction_year: parsedConstructionYear,\n      ai_rating: roundedRating,\n      ai_analysis_html: aiAnalysisHtml,\n    },\n  },\n}];"
       },
       "id": "a7977914-7ea7-40cd-8551-7feb36fb3245",
       "name": "js-aia-output-parser",
@@ -675,7 +839,7 @@
             "title": "={{ $json.ai_parsed.title }}",
             "lot_size": "={{ $json.ai_parsed.lot_size }}",
             "ai_rating": "={{ $json.ai_parsed.ai_rating }}",
-            "external_id": "={{ $json.ai_parsed.external_id.toString() }}",
+            "external_id": "={{ String($json.external_id || $json.ai_parsed.external_id || (String($json.output || '').match(/\"external_id\"\\s*:\\s*\"([^\"]+)\"/i)?.[1]) || '').trim() }}",
             "price_per_m2": "={{ $json.ai_parsed.price_per_m2 }}",
             "ai_analysis_html": "={{ $json.ai_parsed.ai_analysis_html }}",
             "construction_year": "={{ $json.ai_parsed.construction_year }}"
@@ -1093,6 +1257,503 @@
           "name": "Postgres account"
         }
       }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "offer-re-evaluate",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "110aa658-e74b-4956-9f31-0ea2d4b18852",
+      "name": "wh-single-offer-re-evaluate",
+      "type": "n8n-nodes-base.webhook",
+      "position": [
+        82976,
+        22768
+      ],
+      "typeVersion": 2.1,
+      "webhookId": "offer-re-evaluate"
+    },
+    {
+      "parameters": {
+        "jsCode": "const externalId = String($json.body?.external_id || $json.external_id || '').trim();\n\nif (!externalId) {\n  return [];\n}\n\nreturn [{ json: { external_id: externalId } }];"
+      },
+      "id": "d5b97c0d-5d6d-46f6-bb72-1ab012c7d7f6",
+      "name": "js-single-offer-re-evaluate-input",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        83200,
+        22768
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM rea_property_offers\nWHERE external_id = '{{ String($json.external_id || '').replace(/'/g, \"''\") }}'\n  AND COALESCE(is_in_trash, FALSE) = FALSE\n  AND NULLIF(BTRIM(COALESCE(url, '')), '') IS NOT NULL\n  AND LOWER(BTRIM(COALESCE(url, ''))) <> 'undefined'\n  AND BTRIM(url) ~* '^https?://'\nLIMIT 1;",
+        "options": {
+          "queryReplacement": "="
+        }
+      },
+      "id": "f5b690f8-10c7-4d7f-98d1-72e2e5195d53",
+      "name": "sql-single-offer-re-evaluate",
+      "type": "n8n-nodes-base.postgres",
+      "position": [
+        83424,
+        22768
+      ],
+      "typeVersion": 2.6,
+      "credentials": {
+        "postgres": {
+          "id": "D430FF4ekWv9XfdT",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ String($json.url || '').trim().replace('https://krakow.nieruchomosci-online.pl/', 'https://www.nieruchomosci-online.pl/') }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "fc275b11-cdce-4b97-b31b-6c7943ba2d26",
+      "name": "hr-single-offer-re-evaluate-details",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        83648,
+        22768
+      ],
+      "typeVersion": 4.4
+    },
+    {
+      "parameters": {
+        "jsCode": "const allHtmlInputs = $input.all();\nconst allOffersFromSql = $('sql-single-offer-re-evaluate').all();\n\nfunction decodeHtmlEntities(text) {\n  return String(text || '')\n    .replace(/&nbsp;/gi, ' ')\n    .replace(/&amp;/gi, '&')\n    .replace(/&quot;/gi, '\"')\n    .replace(/&#39;|&apos;/gi, \"'\")\n    .replace(/&lt;/gi, '<')\n    .replace(/&gt;/gi, '>');\n}\n\nfunction htmlToAiText(html) {\n  const source = String(html || '');\n  if (!source) return '';\n\n  let text = source\n    .replace(/<script\\b[^>]*>[\\s\\S]*?<\\/script>/gi, ' ')\n    .replace(/<style\\b[^>]*>[\\s\\S]*?<\\/style>/gi, ' ')\n    .replace(/<noscript\\b[^>]*>[\\s\\S]*?<\\/noscript>/gi, ' ')\n    .replace(/<svg\\b[^>]*>[\\s\\S]*?<\\/svg>/gi, ' ')\n    .replace(/<\\/(p|div|li|h1|h2|h3|h4|h5|h6|tr|section|article|br)>/gi, '\\n')\n    .replace(/<[^>]+>/g, ' ');\n\n  text = decodeHtmlEntities(text)\n    .replace(/\\r/g, '\\n')\n    .replace(/\\n{3,}/g, '\\n\\n')\n    .replace(/[ \\t]{2,}/g, ' ')\n    .trim();\n\n  const MAX_CHARS = 24000;\n  if (text.length > MAX_CHARS) {\n    text = text.slice(0, MAX_CHARS) + '\\n\\n[TRUNCATED_FOR_TOKEN_LIMIT]';\n  }\n\n  return text;\n}\n\nreturn allHtmlInputs.map((htmlItem, index) => ({\n  json: {\n    ...(allOffersFromSql[index] ? allOffersFromSql[index].json : {}),\n    raw_md: htmlToAiText(htmlItem.json.data || 'No content'),\n    ai_input_md: htmlToAiText(htmlItem.json.data || 'No content')\n  }\n}));"
+      },
+      "id": "7ecab1fd-1b93-4061-af07-3d2dd0785de9",
+      "name": "js-single-offer-merge-with-desc",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        83872,
+        22768
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH rated_offers AS (\n    SELECT\n        external_id,\n        title,\n        user_notes,\n        user_rated_at,\n        COALESCE(\n            user_grade,\n            CASE user_rating\n                WHEN 'like' THEN 4\n                WHEN '👍 I like it' THEN 4\n                WHEN 'dislike' THEN 2\n                WHEN '👎 I don''t like it' THEN 2\n                ELSE NULL\n            END\n        ) AS effective_grade\n    FROM rea_property_offers\n    WHERE COALESCE(is_in_trash, FALSE) = FALSE\n      AND COALESCE(excluded_from_feedback_loop, FALSE) = FALSE\n),\nbest_examples AS (\n    SELECT *\n    FROM rated_offers\n    WHERE effective_grade IN (5, 4)\n    ORDER BY CASE effective_grade WHEN 5 THEN 0 WHEN 4 THEN 1 ELSE 2 END, user_rated_at DESC NULLS LAST, external_id\n    LIMIT 3\n),\nworst_examples AS (\n    SELECT *\n    FROM rated_offers\n    WHERE effective_grade IN (1, 2)\n    ORDER BY CASE effective_grade WHEN 1 THEN 0 WHEN 2 THEN 1 ELSE 2 END, user_rated_at DESC NULLS LAST, external_id\n    LIMIT 3\n)\nSELECT CONCAT(\n    'BEST RATED EXAMPLES (prioritize grade 5, then 4; up to 3):',\n    COALESCE(\n        (\n            SELECT E'\\n' || string_agg(\n                format(\n                    '- grade=%s | external_id=%s | title=%s | notes=%s',\n                    effective_grade,\n                    external_id,\n                    COALESCE(left(title, 140), 'n/a'),\n                    COALESCE(NULLIF(left(user_notes, 200), ''), 'none')\n                ),\n                E'\\n'\n            )\n            FROM best_examples\n        ),\n        E'\\n- none yet'\n    ),\n    E'\\n\\nWORST RATED EXAMPLES (prioritize grade 1, then 2; up to 3):',\n    COALESCE(\n        (\n            SELECT E'\\n' || string_agg(\n                format(\n                    '- grade=%s | external_id=%s | title=%s | notes=%s',\n                    effective_grade,\n                    external_id,\n                    COALESCE(left(title, 140), 'n/a'),\n                    COALESCE(NULLIF(left(user_notes, 200), ''), 'none')\n                ),\n                E'\\n'\n            )\n            FROM worst_examples\n        ),\n        E'\\n- none yet'\n    )\n) AS feedback_hint;",
+        "options": {
+          "queryReplacement": "="
+        }
+      },
+      "id": "22f2ffd9-edb5-4c2e-9c60-0f7a58b0619d",
+      "name": "sql-single-offer-aia-feedback-hints",
+      "type": "n8n-nodes-base.postgres",
+      "position": [
+        84096,
+        22768
+      ],
+      "typeVersion": 2.6,
+      "credentials": {
+        "postgres": {
+          "id": "D430FF4ekWv9XfdT",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const feedbackHint = $json.feedback_hint || 'No feedback hint available';\n\nlet offer = {};\ntry {\n  offer = $('js-single-offer-merge-with-desc').first().json || {};\n} catch (error) {\n  offer = {};\n}\n\nreturn [{\n  json: {\n    ...offer,\n    feedback_hint: feedbackHint,\n    feedback_hint_debug: feedbackHint\n  }\n}];"
+      },
+      "id": "117fae12-dc1f-425f-b363-7b45af3eb3ca",
+      "name": "js-single-offer-aia-attach-feedback-hint",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        84320,
+        22768
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=# SYSTEM PROMPT: KRAKOW REAL ESTATE ANALYSIS EXPERT\n\n## ROLE\nYou are a precise real estate market analyst. Your task is to extract technical data from the listing HTML code and assign a rating (ai_rating) based on defined user preferences.\n\n## PROPERTY-TYPE FIRST RULE\nBefore scoring, determine the property type from the title and HTML. Distinguish between:\n- apartment in a multi-unit building\n- house, semi-detached house, townhouse, segment\n- house-like unit or apartment marketed as \"jak dom\"\n\nApply only criteria that make sense for that property type. Do not penalize a listing for missing features that are irrelevant for its type.\n\n## YOUR PREFERENCES (RATING CRITERIA)\nAssign `ai_rating` on a 1-10 scale, where 10 is the highest rating, considering:\n- **Location:**: Krakow (highest score: South Krakow).\n- **Area**: minimum 90 sqm.\n- **Layout:**: 3 bedrooms and 2 bathrooms, terrace.\n- **Amenities**: elevator, but only when relevant for apartments in multi-unit buildings. Do not lower the rating for houses, semi-detached homes, townhouses, segments, or house-like units for lacking an elevator.\n- **Negatives (lower the rating):**: electric heating, gas.\n- **Building type**: boutique (under 50 apartments), but only when the listing is an apartment in a multi-unit building. Treat this as not applicable for houses and house-like units, not as a negative.\n\n## HINT FROM PAST USER FEEDBACK\nUse the following past user decisions as a soft hint only. Prioritize strong signals first: grade 5 over 4, and grade 1 over 2. Prefer current listing facts over pattern matching.\n\n{{ $json.feedback_hint }}\n\n## INPUT DATA\n- **EXTERNAL_ID**: <ID>{{ $json.external_id }}</ID>\n- **Title**: {{ $json.title }} \n- **Input price**: {{ $json.price }} PLN\n- **Input price per m2**: {{ $json.price_per_m2 }} PLN\n- **Area**: {{ $json.area }} m2\n- **Lot size**: {{ $json.lot_size }} m2\n- **Construction year**: {{ $json.construction_year }}\n\n## LISTING PAGE CONTENT (FOR ANALYSIS)##: \n\n<AD_CONTENT>\n{{ $json.ai_input_md }} \n</AD_CONTENT>\n\n## DATA EXTRACTION INSTRUCTIONS\nAnalyse the provided listing content inside <AD_CONTENT> and find and fill in gaps in the input data:\n1. **title**: Full, attractive listing title.\n2. **price**: Total property price (remove \"PLN\", \"PLN\", spaces). Return as a number.\n3. **price_per_m2**: Price per sqm. If not available, calculate: price / area.\n4. **area**: Apartment area (number).\n5. **lot_size**: Exclusive garden or plot size in square meters (`m2`). If the listing gives a garden or plot size, return that value in `m2`. Do not convert to ares. For properties without an exclusive garden or plot, return 0.\n6. **year**: Construction year (if missing, estimate or use 0).\n7. **ai_rating**: Your rating (1-10) based on the above preferences.\n\n## EMAIL SUMMARY PREPARATION INSTRUCTIONS (email_html_content field)\n\nGenerate HTML content to be inserted into the email summary section. Focus on substantive analysis.\n\nHTML content requirements:\n\nAI Verdict: Brief justification of the ai_rating score (np. \"Ideal area and location, but deducting points for gas\").\n\nPros Analysis: List features matching preferences (np. southern location, terrace, boutique building, 2 bathrooms).\n\nRisk Analysis (Cons): Clearly indicate what lowered the rating. Mention \"no elevator\" only when elevator is relevant for that property type. Do not treat lack of elevator or lack of boutique-building evidence as a defect for houses, semi-detached homes, townhouses, segments, or house-like units.\n\nLocation: Provide the most precise location possible (district, street).\n\nStyling: Use clean HTML. Use <strong>, <ul>, <li>. Do not add CSS styles inside this field (they will be overridden by the n8n template).\n\nExample structure inside the string:\n\"<strong>Listing analysis:</strong> The apartment meets the key area requirement (90m2+) and has the desired 3-bedroom layout. \n<ul>\n  <li>✅ South Krakow (Debniki)</li>\n  <li>✅ Terrace and 2 bathrooms</li>\n  <li>❌ Gas heating (rating lowered)</li>\n</ul>\"\n\n## OUTPUT FORMAT (STRICT JSON)\nReturn ONLY a clean JSON object. Do not add any comments or introductions.\nUnder no circumstances modify the EXTERNAL_ID value = {{ $json.external_id }}\n\nEXTERNAL_ID is in text format, type \"string\"\n\n{\n  \"external_id\": \"string\",\n  \"title\": \"string\",\n  \"price\": number,\n  \"price_per_m2\": number,\n  \"area\": number,\n  \"lot_size\": number,\n  \"construction_year\": number,\n  \"ai_rating\": number,\n  \"ai_analysis_html\": \"string\"\n}",
+        "options": {}
+      },
+      "id": "d246d526-340f-4a55-8c77-0f53b122920f",
+      "name": "AI Agent - Single Offer Re-evaluate",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "position": [
+        84544,
+        22768
+      ],
+      "retryOnFail": true,
+      "typeVersion": 3.1,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = String($json.output || '').trim();\n\nconst parseNumber = (value, fallback = 0) => {\n  const normalized = String(value ?? '').trim();\n  if (!normalized) return fallback;\n\n  const cleaned = normalized\n    .replace(/\\u00a0/g, '')\n    .replace(/\\s+/g, '')\n    .replace(',', '.')\n    .replace(/[^\\d.-]/g, '');\n  const num = Number(cleaned);\n  return Number.isFinite(num) ? num : fallback;\n};\n\nconst parseNullableNumber = (value) => {\n  const normalized = String(value ?? '').trim();\n  if (!normalized) return null;\n\n  const num = parseNumber(normalized, NaN);\n  return Number.isFinite(num) ? num : null;\n};\n\nconst stripFences = (text) => {\n  const trimmed = String(text || '').trim();\n  const fenceMatch = trimmed.match(/```(?:json)?\\s*([\\s\\S]*?)\\s*```/i);\n  return fenceMatch ? fenceMatch[1].trim() : trimmed;\n};\n\nconst stripTags = (text) => String(text || '').replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ').trim();\n\nconst inferConstructionYearFromHtml = (html) => {\n  const source = String(html || '');\n  if (!source) return null;\n\n  const patterns = [\n    /Rok\\s+budowy[^0-9]{0,20}(20\\d{2}|19\\d{2})/i,\n    /\"Rok\\s+budowy\"\\s*,\\s*\"value\"\\s*:\\s*\"(20\\d{2}|19\\d{2})\"/i,\n    /built[^0-9]{0,20}(20\\d{2}|19\\d{2})/i,\n    /construction[_\\s-]*year[^0-9]{0,20}(20\\d{2}|19\\d{2})/i,\n  ];\n\n  for (const pattern of patterns) {\n    const match = source.match(pattern);\n    if (!match) continue;\n    const value = parseNullableNumber(match[1]);\n    if (value !== null) return value;\n  }\n\n  return null;\n};\n\nconst inferLotSizeSqmFromText = (text) => {\n  const source = String(text || '');\n  if (!source) return null;\n\n  const patterns = [\n    /(?:private\\s+garden|garden|ogr[oó]d|dzia[łl]ka)[^\\d]{0,40}([\\d][\\d\\s.,]*)\\s*m(?:²|2)\\b/i,\n    /([\\d][\\d\\s.,]*)\\s*m(?:²|2)\\b[^\\n\\r]{0,40}(?:private\\s+garden|garden|ogr[oó]d|dzia[łl]ka)/i,\n  ];\n\n  for (const pattern of patterns) {\n    const match = source.match(pattern);\n    if (!match) continue;\n    const value = parseNullableNumber(match[1]);\n    if (value !== null && value > 0) return value;\n  }\n\n  return null;\n};\n\nconst normalizeLotSizeSqm = (lotSize, sources = []) => {\n  const current = parseNumber(lotSize, 0);\n  const inferredSqm = sources\n    .map((source) => inferLotSizeSqmFromText(source))\n    .find((value) => Number.isFinite(value) && value > 0);\n\n  if (current <= 0) {\n    return inferredSqm ?? 0;\n  }\n\n  if (!inferredSqm) {\n    return current;\n  }\n\n  const looksLikeAres = current < 20 && Math.abs(current * 100 - inferredSqm) <= Math.max(5, inferredSqm * 0.05);\n  if (looksLikeAres) {\n    return Math.round(inferredSqm * 100) / 100;\n  }\n\n  return current;\n};\n\nconst escapeHtml = (text) =>\n  String(text || '')\n    .replace(/&/g, '&amp;')\n    .replace(/</g, '&lt;')\n    .replace(/>/g, '&gt;')\n    .replace(/\"/g, '&quot;')\n    .replace(/'/g, '&#39;');\n\nconst inferQuotedFieldFromRaw = (text, fieldName) => {\n  const source = stripFences(text);\n  const patterns = [\n    new RegExp(`\"${fieldName}\"\\s*:\\s*\"([^\"]+)\"`, 'i'),\n    new RegExp(`${fieldName}\\s*:\\s*\"([^\"]+)\"`, 'i'),\n    new RegExp(`${fieldName}\\s*:\\s*([^,\\n\\r}]+)`, 'i'),\n  ];\n\n  for (const pattern of patterns) {\n    const match = source.match(pattern);\n    if (!match) continue;\n    return String(match[1] || '').replace(/\\\\n/g, '\\n').replace(/\\\\\"/g, '\"').trim();\n  }\n\n  return '';\n};\n\nconst inferNumericFieldFromRaw = (text, fieldName) => {\n  const source = stripFences(text);\n  const patterns = [\n    new RegExp(`\"${fieldName}\"\\s*:\\s*([-+]?[0-9][0-9\\s.,]*)`, 'i'),\n    new RegExp(`${fieldName}\\s*:\\s*([-+]?[0-9][0-9\\s.,]*)`, 'i'),\n  ];\n\n  for (const pattern of patterns) {\n    const match = source.match(pattern);\n    if (!match) continue;\n    const value = parseNullableNumber(match[1]);\n    if (value !== null) return value;\n  }\n\n  return null;\n};\n\nconst inferExternalIdFromRaw = (text) => {\n  const quoted = inferQuotedFieldFromRaw(text, 'external_id');\n  if (quoted) return quoted;\n\n  const source = stripFences(text);\n  const fallback = source.match(/\\b([A-Z]{1,6}-\\d{4,})\\b/);\n  return fallback ? String(fallback[1]).trim() : '';\n};\nconst inferTitleFromRaw = (text) => inferQuotedFieldFromRaw(text, 'title');\nconst inferAiRatingFromRaw = (text) => inferNumericFieldFromRaw(text, 'ai_rating');\nconst inferPriceFromRaw = (text) => inferNumericFieldFromRaw(text, 'price');\nconst inferPricePerM2FromRaw = (text) => inferNumericFieldFromRaw(text, 'price_per_m2');\nconst inferAreaFromRaw = (text) => inferNumericFieldFromRaw(text, 'area');\nconst inferLotSizeFromRaw = (text) => inferNumericFieldFromRaw(text, 'lot_size');\nconst inferConstructionYearFromRaw = (text) => inferNumericFieldFromRaw(text, 'construction_year') ?? inferNumericFieldFromRaw(text, 'year');\n\nconst inferAiAnalysisHtmlFromRaw = (text) => {\n  const source = stripFences(text);\n  const marker = '\"ai_analysis_html\"';\n  const markerIndex = source.toLowerCase().indexOf(marker.toLowerCase());\n  if (markerIndex === -1) return '';\n\n  const afterMarker = source.slice(markerIndex);\n  const firstQuote = afterMarker.indexOf('\"', marker.length);\n  if (firstQuote === -1) return '';\n\n  const valuePart = afterMarker.slice(firstQuote + 1);\n  const endQuoteMatch = valuePart.match(/\"\\s*(,|\\})/);\n  const quoted = endQuoteMatch ? valuePart.slice(0, endQuoteMatch.index) : valuePart;\n\n  const normalized = quoted\n    .replace(/\\\\n/g, '\\n')\n    .replace(/\\\\r/g, '\\r')\n    .replace(/\\\\t/g, '\\t')\n    .replace(/\\\\\"/g, '\"')\n    .replace(/\\\\\\//g, '/');\n\n  return String(normalized || '').trim();\n};\n\nconst buildCurrentParsed = () => {\n  const currentAiRating = parseNullableNumber($json.ai_rating);\n  const rawExternalId = inferExternalIdFromRaw(raw);\n\n  return {\n    external_id: String($json.external_id || rawExternalId || '').trim(),\n    title: String($json.title || inferTitleFromRaw(raw) || '').trim(),\n    price: inferPriceFromRaw(raw) ?? parseNumber($json.price, 0),\n    price_per_m2: inferPricePerM2FromRaw(raw) ?? parseNumber($json.price_per_m2, 0),\n    area: inferAreaFromRaw(raw) ?? parseNumber($json.area, 0),\n    lot_size: inferLotSizeFromRaw(raw) ?? parseNumber($json.lot_size, 0),\n    construction_year: Math.round(inferConstructionYearFromRaw(raw) ?? parseNumber($json.construction_year, 0)),\n    ai_rating: currentAiRating === null ? (Number.isFinite(inferAiRatingFromRaw(raw)) ? Math.round(inferAiRatingFromRaw(raw)) : null) : Math.round(currentAiRating),\n    ai_analysis_html: String($json.ai_analysis_html || inferAiAnalysisHtmlFromRaw(raw) || '').trim(),\n  };\n};\n\nconst buildFailure = (reason, details = {}) => ([{\n  json: {\n    ...$json,\n    ai_parse_valid: false,\n    ai_parse_error: reason,\n    ai_parse_details: details,\n    ai_parsed: buildCurrentParsed(),\n  },\n}]);\n\nif (!raw) {\n  return buildFailure('empty_output');\n}\n\nconst parseJson = (text) => {\n  const candidate = stripFences(text);\n\n  try {\n    return JSON.parse(candidate);\n  } catch (_) {\n    const objectMatch = candidate.match(/\\{[\\s\\S]*\\}/);\n    if (!objectMatch) return null;\n\n    try {\n      return JSON.parse(objectMatch[0]);\n    } catch (_) {\n      return null;\n    }\n  }\n};\n\nconst expectedExternalId = String($json.external_id || '').trim();\nconst parsed = parseJson(raw);\n\nlet parsedExternalId = '';\nlet parsedTitle = '';\nlet parsedPrice = parseNumber($json.price, 0);\nlet parsedPricePerM2 = parseNumber($json.price_per_m2, 0);\nlet parsedArea = parseNumber($json.area, 0);\nlet parsedLotSize = parseNumber($json.lot_size, 0);\nlet parsedConstructionYear = Math.round(parseNumber($json.construction_year, 0));\nlet aiRating = parseNullableNumber($json.ai_rating);\nlet aiAnalysisHtml = String($json.ai_analysis_html || '').trim();\nlet parseError = null;\nlet parseDetails = null;\n\nif (parsed && typeof parsed === 'object') {\n  parsedExternalId = String(parsed.external_id || '').trim();\n  parsedTitle = String(parsed.title || '').trim();\n  parsedPrice = parseNumber(parsed.price, parsedPrice);\n  parsedPricePerM2 = parseNumber(parsed.price_per_m2, parsedPricePerM2);\n  parsedArea = parseNumber(parsed.area, parsedArea);\n  parsedLotSize = parseNumber(parsed.lot_size, parsedLotSize);\n  parsedConstructionYear = Math.round(parseNumber(parsed.construction_year, parsedConstructionYear));\n  aiRating = parseNullableNumber(parsed.ai_rating);\n  aiAnalysisHtml = String(parsed.ai_analysis_html || aiAnalysisHtml).trim();\n} else {\n  parsedExternalId = inferExternalIdFromRaw(raw);\n  parsedTitle = inferTitleFromRaw(raw) || String($json.title || '').trim();\n  parsedPrice = inferPriceFromRaw(raw) ?? parsedPrice;\n  parsedPricePerM2 = inferPricePerM2FromRaw(raw) ?? parsedPricePerM2;\n  parsedArea = inferAreaFromRaw(raw) ?? parsedArea;\n  parsedLotSize = inferLotSizeFromRaw(raw) ?? parsedLotSize;\n  parsedConstructionYear = Math.round(inferConstructionYearFromRaw(raw) ?? parsedConstructionYear);\n  const recoveredRating = inferAiRatingFromRaw(raw);\n  aiRating = Number.isFinite(recoveredRating) ? recoveredRating : aiRating;\n  aiAnalysisHtml = inferAiAnalysisHtmlFromRaw(raw) || aiAnalysisHtml;\n\n  parseError = 'invalid_json_recovered';\n  parseDetails = {\n    recovered_external_id: parsedExternalId || null,\n    recovered_title: parsedTitle || null,\n    recovered_price: parsedPrice || null,\n    recovered_price_per_m2: parsedPricePerM2 || null,\n    recovered_area: parsedArea || null,\n    recovered_lot_size: parsedLotSize || null,\n    recovered_construction_year: parsedConstructionYear || null,\n    recovered_ai_rating: Number.isFinite(aiRating) ? aiRating : null,\n  };\n}\n\nif (!parsedExternalId) {\n  parsedExternalId = expectedExternalId;\n}\n\nif (!parsedExternalId) {\n  return buildFailure('missing_external_id');\n}\n\nif (expectedExternalId && parsedExternalId !== expectedExternalId) {\n  return buildFailure('external_id_mismatch', {\n    expected_external_id: expectedExternalId,\n    parsed_external_id: parsedExternalId,\n  });\n}\n\nconst roundedRating = aiRating === null ? null : Math.round(parseNumber(aiRating, NaN));\nif (!Number.isFinite(roundedRating) || roundedRating < 1 || roundedRating > 10) {\n  return buildFailure('invalid_ai_rating', {\n    parsed_ai_rating: aiRating,\n  });\n}\n\nif (!aiAnalysisHtml) {\n  const fallbackPreview = stripFences(raw).slice(0, 3500);\n  aiAnalysisHtml = `<pre>${escapeHtml(fallbackPreview)}</pre>`;\n  if (!parseError) {\n    parseError = 'missing_ai_analysis_html_recovered';\n    parseDetails = { recovered_from_raw_preview: true };\n  }\n}\n\nif (!parsedConstructionYear || parsedConstructionYear <= 0) {\n  parsedConstructionYear = Math.round(\n    inferConstructionYearFromHtml($json.raw_md) ??\n      inferConstructionYearFromHtml(aiAnalysisHtml) ??\n      parsedConstructionYear\n  );\n}\n\nparsedLotSize = normalizeLotSizeSqm(parsedLotSize, [$json.raw_md, aiAnalysisHtml, raw]);\n\nconst fallbackTitle = String($json.title || '').trim();\nconst shouldReplaceGenericTitle = !parsedTitle || /^Oferta:\\s/i.test(parsedTitle);\nconst analysisText = stripTags(aiAnalysisHtml);\nconst titleFromAnalysis = analysisText.match(/Lokalizacja:\\s*([^\\.]+)\\./i)?.[1]?.trim() || '';\n\nreturn [{\n  json: {\n    ...$json,\n    ai_parse_valid: parseError ? false : true,\n    ai_parse_error: parseError,\n    ai_parse_details: parseDetails,\n    ai_parsed: {\n      external_id: parsedExternalId,\n      title: (shouldReplaceGenericTitle ? titleFromAnalysis : parsedTitle) || parsedTitle || fallbackTitle || 'Oferta: ' + parsedExternalId,\n      price: parsedPrice,\n      price_per_m2: parsedPricePerM2,\n      area: parsedArea,\n      lot_size: parsedLotSize,\n      construction_year: parsedConstructionYear,\n      ai_rating: roundedRating,\n      ai_analysis_html: aiAnalysisHtml,\n    },\n  },\n}];"
+      },
+      "id": "f9c70b4e-1dc3-4cb0-a62d-134b2b55c5f9",
+      "name": "js-single-offer-aia-output-parser",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        84768,
+        22768
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public",
+          "cachedResultName": "public"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "list",
+          "value": "rea_property_offers",
+          "cachedResultName": "rea_property_offers"
+        },
+        "columns": {
+          "value": {
+            "area": "={{ $json.ai_parsed.area }}",
+            "price": "={{ $json.ai_parsed.price }}",
+            "title": "={{ $json.ai_parsed.title }}",
+            "lot_size": "={{ $json.ai_parsed.lot_size }}",
+            "ai_rating": "={{ $json.ai_parsed.ai_rating }}",
+            "external_id": "={{ String($json.external_id || $json.ai_parsed.external_id || (String($json.output || '').match(/\"external_id\"\\s*:\\s*\"([^\"]+)\"/i)?.[1]) || '').trim() }}",
+            "price_per_m2": "={{ $json.ai_parsed.price_per_m2 }}",
+            "ai_analysis_html": "={{ $json.ai_parsed.ai_analysis_html }}",
+            "construction_year": "={{ $json.ai_parsed.construction_year }}"
+          },
+          "schema": [
+            {
+              "id": "external_id",
+              "type": "string",
+              "display": true,
+              "removed": false,
+              "required": true,
+              "displayName": "external_id",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "category",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "displayName": "category",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "url",
+              "type": "string",
+              "display": true,
+              "required": true,
+              "displayName": "url",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "title",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "displayName": "title",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "price",
+              "type": "number",
+              "display": true,
+              "required": false,
+              "displayName": "price",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "price_per_m2",
+              "type": "number",
+              "display": true,
+              "required": false,
+              "displayName": "price_per_m2",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "area",
+              "type": "number",
+              "display": true,
+              "required": false,
+              "displayName": "area",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "lot_size",
+              "type": "number",
+              "display": true,
+              "required": false,
+              "displayName": "lot_size",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "construction_year",
+              "type": "number",
+              "display": true,
+              "required": false,
+              "displayName": "construction_year",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ai_rating",
+              "type": "number",
+              "display": true,
+              "required": false,
+              "displayName": "ai_rating",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "user_rating",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "displayName": "user_rating",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "user_notes",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "displayName": "user_notes",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "type": "dateTime",
+              "display": true,
+              "required": false,
+              "displayName": "created_at",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "last_seen_at",
+              "type": "dateTime",
+              "display": true,
+              "required": false,
+              "displayName": "last_seen_at",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ai_analysis_html",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "displayName": "ai_analysis_html",
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ],
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "external_id"
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "e7d84b16-ee54-4f26-9242-80f2809bbf79",
+      "name": "sql-single-offer-aia-update-offer",
+      "type": "n8n-nodes-base.postgres",
+      "position": [
+        84992,
+        22768
+      ],
+      "typeVersion": 2.6,
+      "credentials": {
+        "postgres": {
+          "id": "D430FF4ekWv9XfdT",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO rea_import_run_offer_events\n    (run_id, stage_key, stage_order, external_id, url, event_type, event_reason, payload)\nVALUES (\n    '{{ String($json.run_id || '').replace(/'/g, \"''\") }}',\n    '{{ String($json.stage_key || '').replace(/'/g, \"''\") }}',\n    {{ Number($json.stage_order) || 0 }},\n    '{{ String($json.external_id || '').replace(/'/g, \"''\") }}',\n    {{ $json.url ? \"'\" + String($json.url).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    '{{ String($json.event_type || '').replace(/'/g, \"''\") }}',\n    {{ $json.event_reason ? \"'\" + String($json.event_reason).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    '{{ (() => { const payload = $json.payload; const text = typeof payload === 'string' ? payload : JSON.stringify(payload ?? {}); return text.replace(/'/g, \"''\"); })() }}'::jsonb\n);",
+        "options": {
+          "queryReplacement": "="
+        }
+      },
+      "id": "tlm-sql-insert-event-1777538047536",
+      "name": "tlm-sql-insert-event",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        83200,
+        22400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "D430FF4ekWv9XfdT",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nif (items.length === 0) {\n  return [];\n}\n\nconst runId = items[0]?.json?.run_id;\n\n// Skip if no run_id (FK constraint violation)\nif (!runId || String(runId).trim() === '' || String(runId).toLowerCase() === 'undefined') {\n  return [];\n}\n\n// Count by event type\nconst counts = {\n  passed: 0,\n  dropped: 0,\n};\n\n// Count drops by reason\nconst dropsByReason = {};\n\nfor (const item of items) {\n  const eventType = item.json.event_type;\n  const reason = item.json.event_reason;\n\n  if (eventType === 'passed') {\n    counts.passed++;\n  } else if (eventType === 'dropped') {\n    counts.dropped++;\n    dropsByReason[reason] = (dropsByReason[reason] || 0) + 1;\n  }\n}\n\nconst inputCount = counts.passed + counts.dropped;\nconst outputCount = counts.passed;\nconst droppedCount = counts.dropped;\n\nreturn [{\n  json: {\n    run_id: runId,\n    stage_key: 'validate_before_sql',\n    stage_order: 4,\n    input_count: inputCount,\n    output_count: outputCount,\n    dropped_count: droppedCount,\n    metadata: {\n      drops: dropsByReason\n    }\n  }\n}];"
+      },
+      "id": "tlm-validate-summary-1777538047536",
+      "name": "tlm-validate-summary",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        83424,
+        22400
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO rea_import_run_stage_metrics\n    (run_id, stage_key, stage_order, input_count, output_count, dropped_count, metadata)\nVALUES (\n    '{{ String($json.run_id || '').replace(/'/g, \"''\") }}',\n    '{{ String($json.stage_key || '').replace(/'/g, \"''\") }}',\n    {{ Number($json.stage_order) || 0 }},\n    {{ Number($json.input_count) || 0 }},\n    {{ Number($json.output_count) || 0 }},\n    {{ Number($json.dropped_count) || 0 }},\n    '{{ (() => { const metadata = $json.metadata; const text = typeof metadata === 'string' ? metadata : JSON.stringify(metadata ?? {}); return text.replace(/'/g, \"''\"); })() }}'::jsonb\n)\nON CONFLICT (run_id, stage_key) DO UPDATE SET\n    input_count = EXCLUDED.input_count,\n    output_count = EXCLUDED.output_count,\n    dropped_count = EXCLUDED.dropped_count,\n    metadata = EXCLUDED.metadata;",
+        "options": {
+          "queryReplacement": "="
+        }
+      },
+      "id": "tlm-sql-upsert-stage-metrics-1777538047536",
+      "name": "tlm-sql-upsert-stage-metrics",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        83648,
+        22400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "D430FF4ekWv9XfdT",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all();"
+      },
+      "id": "tlm-return-events-for-metrics-1777538047536",
+      "name": "tlm-return-events-for-metrics",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        83400,
+        22400
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nconst normalizedIds = items\n  .map((item) => String(item.json.external_id ?? '').trim())\n  .filter((id) => id !== '' && id.toLowerCase() !== 'undefined');\n\nconst externalIds = Array.from(new Set(normalizedIds));\n\nreturn [{\n  json: {\n    run_id: items[0]?.json?.run_id,\n    external_ids: externalIds,\n  }\n}];"
+      },
+      "id": "tlm-build-existing-ids-input-1779177025765",
+      "name": "tlm-build-existing-ids-input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        82752,
+        22208
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH ids AS (\n    SELECT DISTINCT NULLIF(BTRIM(value), '') AS external_id\n    FROM jsonb_array_elements_text('{{ JSON.stringify($json.external_ids || []).replace(/'/g, \"''\") }}'::jsonb) AS t(value)\n    WHERE NULLIF(BTRIM(value), '') IS NOT NULL\n)\nSELECT COALESCE(json_agg(p.external_id), '[]'::json) AS existing_ids\nFROM rea_property_offers p\nJOIN ids ON ids.external_id = p.external_id;",
+        "options": {
+          "queryReplacement": "="
+        }
+      },
+      "id": "tlm-sql-existing-ids-1779177025765",
+      "name": "tlm-sql-existing-ids",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        82976,
+        22208
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "D430FF4ekWv9XfdT",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const sqlRows = $input.all();\nconst validItems = $('js-validate-offer-before-sql').all();\n\nlet existingIdsRaw = [];\n\nif (sqlRows.length > 0) {\n  const first = sqlRows[0]?.json?.existing_ids;\n  if (Array.isArray(first)) {\n    existingIdsRaw = first;\n  } else if (typeof first === 'string' && first.trim() !== '') {\n    try {\n      const parsed = JSON.parse(first);\n      if (Array.isArray(parsed)) {\n        existingIdsRaw = parsed;\n      }\n    } catch (_) {\n      existingIdsRaw = [];\n    }\n  }\n}\n\nconst existing = new Set(existingIdsRaw.map((id) => String(id ?? '').trim()));\n\nreturn validItems.map((item) => {\n  const externalId = String(item.json.external_id ?? '').trim();\n\n  return {\n    ...item,\n    json: {\n      ...item.json,\n      is_new_offer: externalId !== '' && !existing.has(externalId),\n    },\n  };\n});"
+      },
+      "id": "tlm-tag-is-new-1779177025765",
+      "name": "tlm-tag-is-new",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        83200,
+        22208
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const upsertedItems = $input.all();\nconst taggedItems = $('tlm-tag-is-new').all();\n\nconst contextsByExternalId = new Map();\nfor (const item of taggedItems) {\n  const externalId = String(item.json.external_id ?? '').trim();\n  if (!contextsByExternalId.has(externalId)) {\n    contextsByExternalId.set(externalId, []);\n  }\n  contextsByExternalId.get(externalId).push(item.json);\n}\n\nconst takeContext = (externalId, fallbackIndex) => {\n  const queue = contextsByExternalId.get(externalId);\n  if (queue && queue.length > 0) {\n    return queue.shift();\n  }\n  return taggedItems[fallbackIndex]?.json ?? {};\n};\n\nreturn upsertedItems.map((item, index) => {\n  const externalId = String(item.json.external_id ?? '').trim();\n  const context = takeContext(externalId, index);\n  const isNew = Boolean(context.is_new_offer);\n\n  return {\n    json: {\n      run_id: context.run_id,\n      stage_key: 'upsert_offer',\n      stage_order: 5,\n      external_id: externalId,\n      url: context.url || item.json.url || null,\n      event_type: isNew ? 'inserted' : 'updated',\n      event_reason: isNew ? 'new' : 'existing',\n      payload: JSON.stringify({ is_new_offer: isNew }),\n    },\n  };\n});"
+      },
+      "id": "tlm-emit-upsert-events-1779177025765",
+      "name": "tlm-emit-upsert-events",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        83248,
+        22016
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nif (items.length === 0) {\n  return [];\n}\n\nconst runId = items[0]?.json?.run_id;\nif (!runId || String(runId).trim() === '' || String(runId).toLowerCase() === 'undefined') {\n  return [];\n}\n\nlet inserted = 0;\nlet updated = 0;\n\nfor (const item of items) {\n  if (item.json.event_type === 'inserted') {\n    inserted += 1;\n  } else if (item.json.event_type === 'updated') {\n    updated += 1;\n  }\n}\n\nconst outputCount = inserted + updated;\n\nreturn [{\n  json: {\n    run_id: runId,\n    stage_key: 'upsert_offer',\n    stage_order: 5,\n    input_count: outputCount,\n    output_count: outputCount,\n    dropped_count: 0,\n    metadata: {\n      inserted,\n      updated,\n    },\n  },\n}];"
+      },
+      "id": "tlm-upsert-summary-1779177025765",
+      "name": "tlm-upsert-summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        83472,
+        22016
+      ]
     }
   ],
   "pinData": {
@@ -1158,7 +1819,13 @@
     },
     "Loop Over Items": {
       "main": [
-        [],
+        [
+          {
+            "node": "tlm-sql-finalize-run",
+            "type": "main",
+            "index": 0
+          }
+        ],
         [
           {
             "node": "Wait",
@@ -1208,11 +1875,60 @@
             "node": "AI Agent",
             "type": "ai_languageModel",
             "index": 0
+          },
+          {
+            "node": "AI Agent - Single Offer Re-evaluate",
+            "type": "ai_languageModel",
+            "index": 0
           }
         ]
       ]
     },
     "st-apartment": {
+      "main": [
+        [
+          {
+            "node": "tlm-init-run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "st-watchdog": {
+      "main": [
+        [
+          {
+            "node": "sql-mark-stale-runs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "sql-mark-run-failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tlm-init-run": {
+      "main": [
+        [
+          {
+            "node": "tlm-sql-insert-run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tlm-sql-insert-run": {
       "main": [
         [
           {
@@ -1367,6 +2083,11 @@
             "node": "Filter",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "tlm-emit-upsert-events",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -1397,7 +2118,23 @@
       "main": [
         [
           {
+            "node": "tlm-attach-run-id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tlm-attach-run-id": {
+      "main": [
+        [
+          {
             "node": "js-validate-offer-before-sql",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "tlm-validate-events",
             "type": "main",
             "index": 0
           }
@@ -1408,7 +2145,23 @@
       "main": [
         [
           {
-            "node": "sql-add-offer",
+            "node": "tlm-build-existing-ids-input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tlm-validate-events": {
+      "main": [
+        [
+          {
+            "node": "tlm-sql-insert-event",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "tlm-return-events-for-metrics",
             "type": "main",
             "index": 0
           }
@@ -1486,6 +2239,201 @@
         [
           {
             "node": "Get row(s) in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "wh-single-offer-re-evaluate": {
+      "main": [
+        [
+          {
+            "node": "js-single-offer-re-evaluate-input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "js-single-offer-re-evaluate-input": {
+      "main": [
+        [
+          {
+            "node": "sql-single-offer-re-evaluate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "sql-single-offer-re-evaluate": {
+      "main": [
+        [
+          {
+            "node": "hr-single-offer-re-evaluate-details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "hr-single-offer-re-evaluate-details": {
+      "main": [
+        [
+          {
+            "node": "js-single-offer-merge-with-desc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "js-single-offer-merge-with-desc": {
+      "main": [
+        [
+          {
+            "node": "sql-single-offer-aia-feedback-hints",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "sql-single-offer-aia-feedback-hints": {
+      "main": [
+        [
+          {
+            "node": "js-single-offer-aia-attach-feedback-hint",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "js-single-offer-aia-attach-feedback-hint": {
+      "main": [
+        [
+          {
+            "node": "AI Agent - Single Offer Re-evaluate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent - Single Offer Re-evaluate": {
+      "main": [
+        [
+          {
+            "node": "js-single-offer-aia-output-parser",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "js-single-offer-aia-output-parser": {
+      "main": [
+        [
+          {
+            "node": "sql-single-offer-aia-update-offer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "sql-single-offer-aia-update-offer": {
+      "main": [
+        []
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        []
+      ]
+    },
+    "tlm-sql-insert-event": {
+      "main": []
+    },
+    "tlm-validate-summary": {
+      "main": [
+        [
+          {
+            "node": "tlm-sql-upsert-stage-metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tlm-sql-upsert-stage-metrics": {},
+    "tlm-return-events-for-metrics": {
+      "main": [
+        [
+          {
+            "node": "tlm-validate-summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tlm-build-existing-ids-input": {
+      "main": [
+        [
+          {
+            "node": "tlm-sql-existing-ids",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tlm-sql-existing-ids": {
+      "main": [
+        [
+          {
+            "node": "tlm-tag-is-new",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tlm-tag-is-new": {
+      "main": [
+        [
+          {
+            "node": "sql-add-offer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tlm-emit-upsert-events": {
+      "main": [
+        [
+          {
+            "node": "tlm-sql-insert-event",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "tlm-upsert-summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tlm-upsert-summary": {
+      "main": [
+        [
+          {
+            "node": "tlm-sql-upsert-stage-metrics",
             "type": "main",
             "index": 0
           }

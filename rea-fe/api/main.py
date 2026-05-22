@@ -1,8 +1,12 @@
 import asyncio
+import json
 import os
 from typing import Any, Literal, Optional
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 
 import asyncpg
+import trafilatura
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -30,6 +34,82 @@ class ReviewAction(BaseModel):
     action: Literal["approve", "keep_blocked", "trash", "restore"]
     actor: str = "frontend"
     reason: str
+
+
+class ExtractTextRequest(BaseModel):
+    html: str
+    max_length: int = 24000
+
+
+class ReevaluationError(Exception):
+    def __init__(self, status_code: int, detail: str) -> None:
+        super().__init__(detail)
+        self.status_code = status_code
+        self.detail = detail
+
+
+def _reevaluation_retry_count() -> int:
+    raw_value = os.getenv("REEVALUATE_OFFER_WEBHOOK_RETRIES", "5").strip()
+    try:
+        return max(1, int(raw_value))
+    except ValueError:
+        return 5
+
+
+def _reevaluation_retry_delay_seconds() -> float:
+    raw_value = os.getenv("REEVALUATE_OFFER_WEBHOOK_RETRY_DELAY_SECONDS", "1.5").strip()
+    try:
+        return max(0.1, float(raw_value))
+    except ValueError:
+        return 1.5
+
+
+async def trigger_offer_reevaluation(external_id: str) -> None:
+    webhook_url = os.getenv(
+        "REEVALUATE_OFFER_WEBHOOK_URL",
+        "http://n8n:5678/webhook/offer-re-evaluate",
+    ).strip()
+    if not webhook_url:
+        raise ReevaluationError(500, "REEVALUATE_OFFER_WEBHOOK_URL is not configured")
+
+    payload = json.dumps({"external_id": external_id}).encode("utf-8")
+
+    def _send() -> None:
+        req = urllib_request.Request(
+            webhook_url,
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib_request.urlopen(req, timeout=120) as response:
+            response.read()
+
+    attempts = _reevaluation_retry_count()
+    delay_seconds = _reevaluation_retry_delay_seconds()
+    last_error: Optional[ReevaluationError] = None
+
+    for attempt in range(1, attempts + 1):
+        try:
+            await asyncio.to_thread(_send)
+            return
+        except urllib_error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="ignore").strip() or str(exc)
+            retryable = exc.code == 404 and "Cannot POST /webhook/offer-re-evaluate" in detail
+            last_error = ReevaluationError(502, f"Re-evaluation workflow failed: {detail}")
+            if not retryable or attempt == attempts:
+                raise last_error from exc
+        except urllib_error.URLError as exc:
+            reason = str(exc.reason)
+            last_error = ReevaluationError(502, f"Failed to reach re-evaluation workflow: {reason}")
+            if attempt == attempts:
+                raise last_error from exc
+
+        await asyncio.sleep(delay_seconds * attempt)
+
+    if last_error is not None:
+        raise last_error
+
+    raise ReevaluationError(502, "Failed to trigger re-evaluation workflow")
 
 
 ALLOWED_SORT = {
@@ -844,6 +924,24 @@ async def review_offer(external_id: str, payload: ReviewAction):
     return serialize_offer(row)
 
 
+@app.post(
+    "/api/offers/{external_id}/re-evaluate",
+    responses={404: {"description": "Offer not found"}, 500: {"description": "Webhook not configured"}, 502: {"description": "Workflow call failed"}},
+)
+async def re_evaluate_offer(external_id: str):
+    async with app.state.pool.acquire() as conn:
+        await fetch_offer_or_404(conn, external_id)
+
+    try:
+        await trigger_offer_reevaluation(external_id)
+    except ReevaluationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+    async with app.state.pool.acquire() as conn:
+        row = await fetch_offer_or_404(conn, external_id)
+    return serialize_offer(row)
+
+
 @app.get("/api/stats")
 async def get_stats(
     user_rating: Optional[str] = None,
@@ -966,3 +1064,34 @@ async def get_categories():
             """
         )
     return [row["category"] for row in rows]
+
+
+@app.post("/api/extract-text")
+async def extract_text(request: ExtractTextRequest):
+    """
+    Extract main content from HTML using Trafilatura.
+    Reduces token usage by 85-90% by removing boilerplate, ads, scripts.
+    """
+    try:
+        if not request.html or not request.html.strip():
+            return {"text": "", "error": "Empty HTML"}
+
+        # Extract main content using trafilatura
+        extracted = trafilatura.extract(
+            request.html,
+            include_comments=False,
+            favor_precision=True,
+            target_language="en"
+        )
+
+        if not extracted:
+            return {"text": "", "warning": "No content extracted"}
+
+        # Truncate to max_length if needed
+        if len(extracted) > request.max_length:
+            extracted = extracted[:request.max_length]
+
+        return {"text": extracted}
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Extraction failed: {str(e)}")

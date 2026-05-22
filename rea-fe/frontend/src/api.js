@@ -47,6 +47,13 @@ export async function reviewOffer(externalId, data) {
   return readJson(res);
 }
 
+export async function reEvaluateOffer(externalId) {
+  const res = await fetch(`${API_BASE}/api/offers/${encodeURIComponent(externalId)}/re-evaluate`, {
+    method: 'POST',
+  });
+  return readJson(res);
+}
+
 export async function fetchStats(params = {}) {
   const query = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {

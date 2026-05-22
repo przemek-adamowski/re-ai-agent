@@ -4,6 +4,7 @@ import {
   Typography, Box, Chip, IconButton, Divider, FormControl, InputLabel, Select, MenuItem,
   Link as MuiLink, Grid, CircularProgress, Tooltip,
 } from '@mui/material';
+import AutoRenewIcon from '@mui/icons-material/Autorenew';
 import KeyboardDoubleArrowUpIcon from '@mui/icons-material/KeyboardDoubleArrowUp';
 import KeyboardDoubleArrowDownIcon from '@mui/icons-material/KeyboardDoubleArrowDown';
 import ThumbUpIcon from '@mui/icons-material/ThumbUp';
@@ -14,7 +15,7 @@ import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import CloseIcon from '@mui/icons-material/Close';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DOMPurify from 'dompurify';
-import { getOffer, getOfferAudit, reviewOffer, updateOffer } from '../api';
+import { getOffer, getOfferAudit, reEvaluateOffer, reviewOffer, updateOffer } from '../api';
 import { aiColor, chipToneSx, getOfferBadges, gradeToColorHex, gradeToLabel } from '../offerStatus';
 
 const fmt = (p) => !p ? '\u2014' : new Intl.NumberFormat('pl-PL', { style: 'currency', currency: 'PLN', maximumFractionDigits: 0 }).format(p);
@@ -35,6 +36,7 @@ export default function OfferDetailDialog({ offerId, open, onClose, onUpdated })
   const [rating, setRating] = useState('');
   const [reviewReason, setReviewReason] = useState('');
   const [saving, setSaving] = useState(false);
+  const [reevaluating, setReevaluating] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [copyHint, setCopyHint] = useState('');
@@ -133,6 +135,23 @@ export default function OfferDetailDialog({ offerId, open, onClose, onUpdated })
       setError(e.message || 'Failed to update review status.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleReEvaluate = async () => {
+    setReevaluating(true);
+    setError('');
+    try {
+      const updated = await reEvaluateOffer(offerId);
+      const audit = await getOfferAudit(offerId);
+      setOffer(updated);
+      setTitle(updated.title || '');
+      setAuditItems(audit);
+      onUpdated(updated);
+    } catch (e) {
+      setError(e.message || 'Failed to re-evaluate offer.');
+    } finally {
+      setReevaluating(false);
     }
   };
 
@@ -346,6 +365,13 @@ export default function OfferDetailDialog({ offerId, open, onClose, onUpdated })
         </DialogContent>
       )}
       <DialogActions>
+        <Button
+          startIcon={<AutoRenewIcon />}
+          onClick={handleReEvaluate}
+          disabled={saving || loading || reevaluating}
+        >
+          {reevaluating ? 'Re-evaluating...' : 'Re-evaluate AI'}
+        </Button>
         {offer && !offer.is_in_trash && (
           <Button color="error" onClick={() => handleReviewAction('trash')} disabled={saving || loading}>
             Move to Trash
