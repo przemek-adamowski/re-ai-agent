@@ -719,11 +719,213 @@ def serialize_audit(row: asyncpg.Record) -> dict[str, Any]:
     return event
 
 
+def _decode_json_field(value: Any) -> Any:
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return value
+    return value
+
+
+def serialize_import_run(row: asyncpg.Record) -> dict[str, Any]:
+    run = dict(row)
+    for key in ("started_at", "finished_at"):
+        if run.get(key):
+            run[key] = run[key].isoformat()
+    if "summary" in run:
+        run["summary"] = _decode_json_field(run.get("summary"))
+    return run
+
+
+def serialize_stage_metric(row: asyncpg.Record) -> dict[str, Any]:
+    metric = dict(row)
+    if metric.get("created_at"):
+        metric["created_at"] = metric["created_at"].isoformat()
+    if "metadata" in metric:
+        metric["metadata"] = _decode_json_field(metric.get("metadata"))
+    return metric
+
+
+def serialize_import_run_event(row: asyncpg.Record) -> dict[str, Any]:
+    event = dict(row)
+    if event.get("created_at"):
+        event["created_at"] = event["created_at"].isoformat()
+    if "payload" in event:
+        event["payload"] = _decode_json_field(event.get("payload"))
+    return event
+
+
 async def fetch_offer_or_404(conn: asyncpg.Connection, external_id: str) -> asyncpg.Record:
     row = await conn.fetchrow(f"{OFFERS_SELECT} WHERE external_id = $1", external_id)
     if not row:
         raise HTTPException(status_code=404, detail="Offer not found")
     return row
+
+
+async def fetch_import_run_or_404(conn: asyncpg.Connection, run_id: str) -> asyncpg.Record:
+    row = await conn.fetchrow(
+        """
+        SELECT run_id, workflow_name, workflow_version, trigger_source, started_at, finished_at, status, portal_scope, notes, raw_execution_id, summary
+        FROM rea_import_runs
+        WHERE run_id = $1
+        """,
+        run_id,
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Import run not found")
+    return row
+
+
+@app.get("/api/import-runs")
+async def list_import_runs(limit: int = 50, trigger_source: Optional[str] = None):
+    normalized_limit = max(1, min(limit, 200))
+
+    query = (
+        "SELECT run_id, workflow_name, workflow_version, trigger_source, started_at, finished_at, status, portal_scope, notes, raw_execution_id, summary "
+        "FROM rea_import_runs"
+    )
+    params: list[Any] = []
+    if trigger_source:
+        query += " WHERE trigger_source = $1"
+        params.append(trigger_source)
+    query += f" ORDER BY started_at DESC LIMIT ${len(params) + 1}"
+    params.append(normalized_limit)
+
+    async with app.state.pool.acquire() as conn:
+        rows = await conn.fetch(query, *params)
+
+    return [serialize_import_run(row) for row in rows]
+
+
+@app.get("/api/import-runs/{run_id}")
+async def get_import_run(run_id: str):
+    async with app.state.pool.acquire() as conn:
+        run_row = await fetch_import_run_or_404(conn, run_id)
+        metric_rows = await conn.fetch(
+            """
+            SELECT id, run_id, stage_key, stage_order, input_count, output_count, dropped_count, error_count, duration_ms, metadata, created_at
+            FROM rea_import_run_stage_metrics
+            WHERE run_id = $1
+            ORDER BY stage_order ASC, id ASC
+            """,
+            run_id,
+        )
+
+    return {
+        "run": serialize_import_run(run_row),
+        "stage_metrics": [serialize_stage_metric(row) for row in metric_rows],
+    }
+
+
+@app.get("/api/import-runs/{run_id}/events")
+async def get_import_run_events(
+    run_id: str,
+    stage_key: Optional[str] = None,
+    event_type: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+):
+    normalized_limit = max(1, min(limit, 500))
+    normalized_offset = max(0, offset)
+
+    conditions = ["run_id = $1"]
+    params: list[Any] = [run_id]
+    next_param = 2
+
+    if stage_key:
+        conditions.append(f"stage_key = ${next_param}")
+        params.append(stage_key)
+        next_param += 1
+
+    if event_type:
+        conditions.append(f"event_type = ${next_param}")
+        params.append(event_type)
+        next_param += 1
+
+    where_clause = " AND ".join(conditions)
+
+    async with app.state.pool.acquire() as conn:
+        await fetch_import_run_or_404(conn, run_id)
+        total = await conn.fetchval(
+            f"SELECT COUNT(*) FROM rea_import_run_offer_events WHERE {where_clause}",
+            *params,
+        )
+        rows = await conn.fetch(
+            f"""
+            SELECT id, run_id, stage_key, stage_order, external_id, url, event_type, event_reason, is_new_offer, review_status, payload, created_at
+            FROM rea_import_run_offer_events
+            WHERE {where_clause}
+            ORDER BY created_at DESC, id DESC
+            LIMIT ${next_param} OFFSET ${next_param + 1}
+            """,
+            *params,
+            normalized_limit,
+            normalized_offset,
+        )
+
+    return {
+        "total": total,
+        "events": [serialize_import_run_event(row) for row in rows],
+    }
+
+
+@app.get("/api/import-runs/{run_id}/new-pending")
+async def get_import_run_new_pending(run_id: str):
+    async with app.state.pool.acquire() as conn:
+        await fetch_import_run_or_404(conn, run_id)
+        rows = await conn.fetch(
+            """
+            SELECT DISTINCT
+                o.external_id,
+                o.category,
+                o.url,
+                o.title,
+                o.price,
+                o.price_per_m2,
+                o.area,
+                o.lot_size,
+                o.construction_year,
+                o.ai_rating,
+                o.ai_analysis_html,
+                o.user_rating,
+                o.user_grade,
+                o.user_notes,
+                o.user_rated_at,
+                o.property_portal,
+                o.district,
+                o.location_text,
+                o.geo_status,
+                o.geo_confidence,
+                o.geo_reason,
+                o.policy_version,
+                o.is_soft_blocked,
+                o.is_in_trash,
+                o.needs_manual_review,
+                o.is_exception_candidate,
+                e.review_status,
+                o.review_reason,
+                o.reviewed_by,
+                o.reviewed_at,
+                o.pre_trash_review_status,
+                o.excluded_from_feedback_loop,
+                o.created_at,
+                o.last_seen_at,
+                o.sent_at,
+                o.review_status AS current_review_status
+            FROM rea_property_offers o
+            JOIN rea_import_run_offer_events e ON e.external_id = o.external_id
+            WHERE e.run_id = $1
+              AND e.stage_key = 'final_policy_state'
+              AND e.event_type = 'final_state'
+              AND COALESCE(e.is_new_offer, FALSE) = TRUE
+              AND e.review_status = 'pending'
+            ORDER BY o.created_at DESC, o.external_id DESC
+            """,
+            run_id,
+        )
+
+    return [serialize_offer(row) for row in rows]
 
 
 @app.get("/api/offers")

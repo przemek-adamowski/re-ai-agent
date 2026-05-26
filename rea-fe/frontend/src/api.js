@@ -69,3 +69,37 @@ export async function fetchCategories() {
   const res = await fetch(`${API_BASE}/api/categories`);
   return readJson(res);
 }
+
+export async function fetchImportRuns(params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      query.append(key, value);
+    }
+  });
+  const suffix = query.toString() ? `?${query}` : '';
+  const res = await fetch(`${API_BASE}/api/import-runs${suffix}`);
+  return readJson(res);
+}
+
+export async function getImportRun(runId) {
+  const res = await fetch(`${API_BASE}/api/import-runs/${encodeURIComponent(runId)}`);
+  return readJson(res);
+}
+
+export async function fetchImportRunEvents(runId, params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      query.append(key, value);
+    }
+  });
+  const suffix = query.toString() ? `?${query}` : '';
+  const res = await fetch(`${API_BASE}/api/import-runs/${encodeURIComponent(runId)}/events${suffix}`);
+  return readJson(res);
+}
+
+export async function fetchImportRunNewPending(runId) {
+  const res = await fetch(`${API_BASE}/api/import-runs/${encodeURIComponent(runId)}/new-pending`);
+  return readJson(res);
+}
