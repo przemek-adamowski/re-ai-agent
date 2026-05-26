@@ -75,6 +75,8 @@ function buildDropReasonData(metrics) {
 }
 
 export default function ImportRuns() {
+  const [eventsPage, setEventsPage] = useState(0);
+  const [eventsPageSize, setEventsPageSize] = useState(25);
   const [runs, setRuns] = useState([]);
   const [runsLoading, setRunsLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -127,7 +129,8 @@ export default function ImportRuns() {
       const [runDetail, runEvents, pendingOffers] = await Promise.all([
         getImportRun(selectedRunId),
         fetchImportRunEvents(selectedRunId, {
-          limit: 200,
+          limit: eventsPageSize,
+          offset: eventsPage * eventsPageSize,
           stage_key: stageFilter || undefined,
           event_type: eventTypeFilter || undefined,
         }),
@@ -146,7 +149,7 @@ export default function ImportRuns() {
     } finally {
       setDetailLoading(false);
     }
-  }, [selectedRunId, stageFilter, eventTypeFilter]);
+  }, [selectedRunId, stageFilter, eventTypeFilter, eventsPage, eventsPageSize]);
 
   useEffect(() => {
     loadRuns();
@@ -155,6 +158,10 @@ export default function ImportRuns() {
   useEffect(() => {
     loadDetail();
   }, [loadDetail]);
+
+  useEffect(() => {
+    setEventsPage(0);
+  }, [selectedRunId, stageFilter, eventTypeFilter, eventsPageSize]);
 
   const funnelData = useMemo(() => (detail?.stage_metrics || []).map((metric) => ({
     stage_key: metric.stage_key,
@@ -396,7 +403,19 @@ export default function ImportRuns() {
                   columns={eventColumns}
                   getRowId={(row) => row.id}
                   autoHeight
-                  hideFooter
+                  pagination
+                  paginationMode="server"
+                  rowCount={eventsTotal}
+                  paginationModel={{ page: eventsPage, pageSize: eventsPageSize }}
+                  onPaginationModelChange={(model) => {
+                    if (model.page !== eventsPage) {
+                      setEventsPage(model.page);
+                    }
+                    if (model.pageSize !== eventsPageSize) {
+                      setEventsPageSize(model.pageSize);
+                    }
+                  }}
+                  pageSizeOptions={[10, 25, 50, 100]}
                   disableRowSelectionOnClick
                   sx={{ '& .MuiDataGrid-cell': { alignItems: 'flex-start' } }}
                 />

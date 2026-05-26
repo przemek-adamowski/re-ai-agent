@@ -911,7 +911,7 @@ These apply to every phase:
 - [x] Phase 1.2 — Pre-Existence Check + `upsert_offer` Events
 - [x] Phase 1.3 — Instrument `parse_list`, `fetch_detail`, `merge_detail`
 - [x] Phase 1.4 — `final_policy_state` + Summary Freeze
-- [ ] Phase 2 — Backend + Frontend
+- [ ] Phase 2 — Backend + Frontend (in progress)
 - [ ] Phase 3 — Backfill Workflow Instrumentation
 
 ### Phase 1.0 — Schema + Run Identity ✅ DONE
@@ -990,9 +990,22 @@ Validation evidence: run `2026-05-26T0715Z__9WQ6M1K5XQ6` (completed) passed full
 - `summary_updated_existing = 4` and `metrics_updated_existing = 4`
 - `summary_new_to_review = 0` and `metrics_new_to_review = 0`
 
-### Phase 2 — Backend + Frontend ⬜ NOT STARTED
+### Phase 2 — Backend + Frontend 🟨 IN PROGRESS
 
-FastAPI endpoints + React `Import runs` tab.
+Backend telemetry endpoints and the first React `Import runs` page slice are now implemented.
+
+| Item                                  | Status | Notes                                                                                         |
+| ------------------------------------- | ------ | --------------------------------------------------------------------------------------------- |
+| `GET /api/import-runs`                | ✅ Done | Lists recent runs with optional `trigger_source` filter                                       |
+| `GET /api/import-runs/{run_id}`       | ✅ Done | Returns run header + ordered stage metrics                                                    |
+| `GET /api/import-runs/{run_id}/events` | ✅ Done | Returns paged event rows with `stage_key` and `event_type` filters                            |
+| `GET /api/import-runs/{run_id}/new-pending` | ✅ Done | Returns run-scoped new offers that ended in `pending` at `final_policy_state`                 |
+| React route `/import-runs`            | ✅ Done | Added to dashboard navigation with run list, funnel view, events tab, and `new pending` tab  |
+| Event pagination in UI                | ✅ Done | Events tab now pages via API `limit`/`offset` instead of rendering one fixed batch            |
+| Backend tests                         | ✅ Done | `rea-fe/api/tests/test_import_runs_api.py` validates list/detail/events/new-pending endpoints |
+| Frontend validation                   | ✅ Done | Production build passes in `rea-fe` container                                                 |
+
+Remaining Phase 2 work: refine the UI polish for large runs, add any missing API/client conveniences, and decide whether to extend this page with richer drilldown or export flows before marking the phase fully done.
 
 ### Phase 3 — Backfill Workflow Instrumentation ⬜ NOT STARTED
 
