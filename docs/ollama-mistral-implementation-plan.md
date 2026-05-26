@@ -10,27 +10,27 @@ Instrukcja aktualizacji postepu:
 
 ### 1. Strategia przelaczenia providerow
 
-- [ ] Ustalic tryb przejscia: feature flaga (provider switch), bez twardego cut-over.
-- [ ] Ustawic provider domyslny: `ollama`.
-- [ ] Zostawic fallback: `anthropic` na czas stabilizacji.
-- [ ] Potwierdzic scope: oba branche AI w workflow (batch + single offer re-evaluate).
+- [x] Ustalic tryb przejscia: feature flaga (provider switch), bez twardego cut-over.
+- [x] Ustawic provider domyslny: `ollama`.
+- [x] Zostawic fallback: `anthropic` na czas stabilizacji.
+- [x] Potwierdzic scope: oba branche AI w workflow (batch + single offer re-evaluate).
 
 ### 2. Infrastruktura lokalna (Ollama)
 
-- [ ] Dodac/uszczegolowic konfiguracje Ollama w `docker-compose.yml` albo potwierdzic hostowa instancje.
-- [ ] Zapewnic lacznosc `n8n` -> `ollama` (port `11434`).
-- [ ] Pobierac model `mistral` (lub wybrany wariant) i potwierdzic gotowosc endpointu.
-- [ ] Dodac prosty health-check komenda testowa do runbooka operacyjnego.
+- [x] Dodac/uszczegolowic konfiguracje Ollama w `docker-compose.yml` albo potwierdzic hostowa instancje.
+- [x] Zapewnic lacznosc `n8n` -> `ollama` (port `11434`).
+- [x] Pobierac model `mistral` (lub wybrany wariant) i potwierdzic gotowosc endpointu.
+- [x] Dodac prosty health-check komenda testowa do runbooka operacyjnego.
 
 ## Etap 2. Integracja z workflow n8n
 
 ### 3. Zmiany w n8n workflow
 
-- [ ] Dodac node modelu Ollama Chat Model w `n8n/workflows/Real Estate AI Agent.json`.
-- [ ] Podpiac Ollama do `AI Agent` (glowny pipeline).
-- [ ] Podpiac Ollama do `AI Agent - Single Offer Re-evaluate`.
-- [ ] Odlaczyc `Anthropic Chat Model` od aktywnych agentow (bez usuwania, jako rollback path).
-- [ ] Zweryfikowac, ze nie zmieniono innych backupowych workflow JSON.
+- [x] Dodac node modelu Ollama Chat Model w `n8n/workflows/Real Estate AI Agent.json`.
+- [x] Podpiac Ollama do `AI Agent` (glowny pipeline).
+- [x] Podpiac Ollama do `AI Agent - Single Offer Re-evaluate`.
+- [x] Odlaczyc `Anthropic Chat Model` od aktywnych agentow (bez usuwania, jako rollback path).
+- [x] Zweryfikowac, ze nie zmieniono innych backupowych workflow JSON.
 
 ### 4. Prompt i format wyjscia (JSON)
 

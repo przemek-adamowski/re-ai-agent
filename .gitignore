@@ -15,3 +15,4 @@ n8n/parsers/data/
 n8n/parsers/js/
 rea-fe/frontend/node_modules/
 docs/js-merge-with-desc-output.json
+.ollama/

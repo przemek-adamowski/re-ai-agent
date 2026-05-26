@@ -232,7 +232,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "UPDATE rea_import_runs\nSET status = 'completed',\n    finished_at = NOW()\nWHERE run_id = '{{ $(\"tlm-init-run\").first().json.run_id }}'\n  AND status = 'running'\nRETURNING run_id, status, finished_at;",
+        "query": "UPDATE rea_import_runs\nSET status = 'completed',\n    finished_at = NOW(),\n    summary = '{{ (() => { const summary = $json.summary ?? {}; return JSON.stringify(summary).replace(/'/g, \"''\"); })() }}'::jsonb\nWHERE run_id = '{{ String($json.run_id || $(\"tlm-init-run\").first().json.run_id || '').replace(/'/g, \"''\") }}'\n  AND status = 'running'\nRETURNING run_id, status, finished_at, summary;",
         "options": {
           "queryReplacement": "="
         }
@@ -251,6 +251,88 @@
           "name": "Postgres account"
         }
       }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH deleted AS (\n    DELETE FROM rea_import_run_offer_events\n    WHERE run_id = '{{ $(\"tlm-init-run\").first().json.run_id }}'\n      AND stage_key = 'final_policy_state'\n), inserted AS (\n    INSERT INTO rea_import_run_offer_events (\n        run_id,\n        stage_key,\n        stage_order,\n        external_id,\n        url,\n        event_type,\n        event_reason,\n        is_new_offer,\n        review_status,\n        payload\n    )\n    SELECT\n        '{{ $(\"tlm-init-run\").first().json.run_id }}'::text AS run_id,\n        'final_policy_state'::text AS stage_key,\n        6 AS stage_order,\n        o.external_id,\n        o.url,\n        'final_state'::text AS event_type,\n        COALESCE(o.review_status, 'not_needed')::text AS event_reason,\n        COALESCE((e.payload->>'is_new_offer')::boolean, FALSE) AS is_new_offer,\n        COALESCE(o.review_status, 'not_needed')::text AS review_status,\n        jsonb_build_object(\n            'ai_rating', o.ai_rating,\n            'is_in_trash', o.is_in_trash\n        ) AS payload\n    FROM rea_property_offers o\n    JOIN rea_import_run_offer_events e\n      ON e.external_id = o.external_id\n     AND e.run_id = '{{ $(\"tlm-init-run\").first().json.run_id }}'\n     AND e.stage_key = 'upsert_offer'\n    RETURNING 1\n)\nSELECT '{{ $(\"tlm-init-run\").first().json.run_id }}'::text AS run_id, COUNT(*)::int AS final_state_count\nFROM inserted;",
+        "options": {
+          "queryReplacement": "="
+        }
+      },
+      "id": "3e1fb631-b372-4e1a-87b1-2df9c150d101",
+      "name": "tlm-sql-final-policy",
+      "type": "n8n-nodes-base.postgres",
+      "position": [
+        83936,
+        22016
+      ],
+      "typeVersion": 2.6,
+      "credentials": {
+        "postgres": {
+          "id": "D430FF4ekWv9XfdT",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH agg AS (\n    SELECT\n        '{{ $(\"tlm-init-run\").first().json.run_id }}'::text AS run_id,\n        COUNT(*)::int AS total_count,\n        COUNT(*) FILTER (WHERE review_status = 'pending')::int AS review_pending,\n        COUNT(*) FILTER (WHERE review_status = 'not_needed')::int AS review_not_needed,\n        COUNT(*) FILTER (WHERE review_status = 'blocked')::int AS review_blocked,\n        COUNT(*) FILTER (WHERE review_status = 'trashed')::int AS review_trashed,\n        COUNT(*) FILTER (WHERE COALESCE(is_new_offer, FALSE) = TRUE AND review_status = 'pending')::int AS new_pending_review,\n        COUNT(*) FILTER (WHERE COALESCE(is_new_offer, FALSE) = TRUE AND review_status = 'not_needed')::int AS new_active_no_review,\n        COUNT(*) FILTER (WHERE COALESCE(is_new_offer, FALSE) = TRUE AND review_status = 'blocked')::int AS new_blocked,\n        COUNT(*) FILTER (WHERE COALESCE(is_new_offer, FALSE) = TRUE AND review_status = 'trashed')::int AS new_trashed\n    FROM rea_import_run_offer_events\n    WHERE run_id = '{{ $(\"tlm-init-run\").first().json.run_id }}'\n      AND stage_key = 'final_policy_state'\n)\nINSERT INTO rea_import_run_stage_metrics (\n    run_id,\n    stage_key,\n    stage_order,\n    input_count,\n    output_count,\n    dropped_count,\n    error_count,\n    metadata\n)\nSELECT\n    run_id,\n    'final_policy_state'::text AS stage_key,\n    6 AS stage_order,\n    total_count AS input_count,\n    total_count AS output_count,\n    0 AS dropped_count,\n    0 AS error_count,\n    jsonb_build_object(\n        'review_pending', review_pending,\n        'review_not_needed', review_not_needed,\n        'review_blocked', review_blocked,\n        'review_trashed', review_trashed,\n        'new_pending_review', new_pending_review,\n        'new_active_no_review', new_active_no_review,\n        'new_blocked', new_blocked,\n        'new_trashed', new_trashed\n    ) AS metadata\nFROM agg\nON CONFLICT (run_id, stage_key) DO UPDATE SET\n    input_count = EXCLUDED.input_count,\n    output_count = EXCLUDED.output_count,\n    dropped_count = EXCLUDED.dropped_count,\n    error_count = EXCLUDED.error_count,\n    metadata = EXCLUDED.metadata\nRETURNING run_id, stage_key, stage_order, input_count, output_count, dropped_count, error_count, metadata;",
+        "options": {
+          "queryReplacement": "="
+        }
+      },
+      "id": "4f87f20a-3d14-4acb-a18f-c1374bf5ca51",
+      "name": "tlm-sql-final-policy-metrics",
+      "type": "n8n-nodes-base.postgres",
+      "position": [
+        84160,
+        22016
+      ],
+      "typeVersion": 2.6,
+      "credentials": {
+        "postgres": {
+          "id": "D430FF4ekWv9XfdT",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH events AS (\n    SELECT stage_key, event_type, COALESCE(event_reason, 'ok') AS event_reason, is_new_offer\n    FROM rea_import_run_offer_events\n    WHERE run_id = '{{ $(\"tlm-init-run\").first().json.run_id }}'\n), stage_metrics AS (\n    SELECT stage_key, metadata\n    FROM rea_import_run_stage_metrics\n    WHERE run_id = '{{ $(\"tlm-init-run\").first().json.run_id }}'\n), counts AS (\n    SELECT\n        COALESCE((SELECT COUNT(*) FROM events WHERE stage_key = 'parse_list' AND event_type = 'entered'), 0) AS entered_workflow,\n        GREATEST(\n            COALESCE((SELECT COUNT(*) FROM events WHERE stage_key = 'validate_before_sql' AND event_type = 'passed'), 0),\n            COALESCE((SELECT COUNT(*) FROM events WHERE stage_key = 'upsert_offer' AND event_type IN ('inserted', 'updated')), 0)\n        ) AS validated_for_sql\n), summary AS (\n    SELECT\n        '{{ $(\"tlm-init-run\").first().json.run_id }}'::text AS run_id,\n        jsonb_build_object(\n            'entered_workflow', entered_workflow,\n            'validated_for_sql', validated_for_sql,\n            'dropped_before_sql', GREATEST(entered_workflow - validated_for_sql, 0),\n            'drops_by_reason', COALESCE((\n                SELECT jsonb_object_agg(reason, total_count)\n                FROM (\n                    SELECT event_reason AS reason, COUNT(*)::int AS total_count\n                    FROM events\n                    WHERE stage_key IN ('fetch_detail', 'merge_detail', 'validate_before_sql')\n                      AND event_type = 'dropped'\n                    GROUP BY event_reason\n                ) aggregated\n            ), '{}'::jsonb),\n            'inserted_new', COALESCE((SELECT COUNT(*) FROM events WHERE stage_key = 'upsert_offer' AND event_type = 'inserted'), 0),\n            'updated_existing', COALESCE((SELECT COUNT(*) FROM events WHERE stage_key = 'upsert_offer' AND event_type = 'updated'), 0),\n            'new_to_review', COALESCE((SELECT COUNT(*) FROM events WHERE stage_key = 'final_policy_state' AND event_type = 'final_state' AND COALESCE(is_new_offer, FALSE) = TRUE AND event_reason = 'pending'), 0),\n            'new_not_needed', COALESCE((SELECT COUNT(*) FROM events WHERE stage_key = 'final_policy_state' AND event_type = 'final_state' AND COALESCE(is_new_offer, FALSE) = TRUE AND event_reason = 'not_needed'), 0),\n            'new_blocked', COALESCE((SELECT COUNT(*) FROM events WHERE stage_key = 'final_policy_state' AND event_type = 'final_state' AND COALESCE(is_new_offer, FALSE) = TRUE AND event_reason = 'blocked'), 0),\n            'new_trashed', COALESCE((SELECT COUNT(*) FROM events WHERE stage_key = 'final_policy_state' AND event_type = 'final_state' AND COALESCE(is_new_offer, FALSE) = TRUE AND event_reason = 'trashed'), 0),\n            'ai_rated', 0,\n            'ai_parse_failed', 0\n        ) AS summary\n    FROM counts\n)\nSELECT run_id, summary\nFROM summary;",
+        "options": {
+          "queryReplacement": "="
+        }
+      },
+      "id": "1f0c8f5f-4239-4a78-a7b6-53f8ff8ff7fe",
+      "name": "tlm-sql-build-summary",
+      "type": "n8n-nodes-base.postgres",
+      "position": [
+        84384,
+        21920
+      ],
+      "typeVersion": 2.6,
+      "credentials": {
+        "postgres": {
+          "id": "D430FF4ekWv9XfdT",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map((item) => ({ json: { run_id: String(item.json?.run_id || '').trim(), summary: item.json?.summary || {} } }));"
+      },
+      "id": "c8cc53b2-f610-48c9-bc89-dce65227966c",
+      "name": "tlm-build-summary",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        84384,
+        22016
+      ],
+      "typeVersion": 2
     },
     {
       "parameters": {
@@ -338,7 +420,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const now = new Date();\nconst timestamp = now.toISOString().replace(/[:.]/g, '').slice(0, 15) + 'Z';\nconst random = Math.random().toString(36).slice(2, 14).toUpperCase();\n\nreturn [{\n  json: {\n    run_id: `${timestamp}__${random}`,\n    workflow_name: 'Real Estate AI Agent',\n    workflow_version: '1.0.2',\n    trigger_source: 'schedule',\n    started_at: now.toISOString(),\n  }\n}];"
+        "jsCode": "const now = new Date();\nconst timestamp = now.toISOString().replace(/[:.]/g, '').slice(0, 15) + 'Z';\nconst random = Math.random().toString(36).slice(2, 14).toUpperCase();\n\nreturn [{\n  json: {\n    run_id: `${timestamp}__${random}`,\n    workflow_name: 'Real Estate AI Agent',\n    workflow_version: '1.6.0',\n    trigger_source: 'schedule',\n    started_at: now.toISOString(),\n  }\n}];"
       },
       "id": "7558de9f-2df0-4946-96ec-e4dff74f6687",
       "name": "tlm-init-run",
@@ -403,7 +485,8 @@
     },
     {
       "parameters": {
-        "jsCode": "// LEVEL 2: Parse apartments from investment page JSON-LD\nconst crypto = require('crypto');\n\nconst items = $input.all();\nconst results = [];\n\nfunction classifyOffer(offer) {\n\treturn {\n\t\t...offer,\n\t\tgeo_status: 'unknown',\n\t\tgeo_confidence: 'low',\n\t\tgeo_reason: 'Krakow detected but district is missing or unsupported.',\n\t\tpolicy_version: 'south-krakow-v1',\n\t\tis_exception_candidate: false,\n\t\treview_status: 'pending',\n\t\tis_soft_blocked: true,\n\t\tneeds_manual_review: true,\n\t\texcluded_from_feedback_loop: true,\n\t\tis_in_trash: false,\n\t};\n}\n\nfunction extractHtml(item) {\n\tif (item.binary && item.binary.data) {\n\t\treturn Buffer.from(item.binary.data.data, 'base64').toString('utf-8');\n\t}\n\tif (typeof item === 'string') {\n\t\treturn item;\n\t}\n\tif (item && item.data) {\n\t\treturn item.data;\n\t}\n\tif (typeof item.json === 'string') {\n\t\treturn item.json;\n\t}\n\tif (item.json && item.json.data) {\n\t\treturn item.json.data;\n\t}\n\treturn JSON.stringify(item.json || item);\n}\n\nfunction cleanText(value) {\n\tif (!value) {\n\t\treturn '';\n\t}\n\treturn String(value)\n\t\t.replace(/<[^>]+>/g, ' ')\n\t\t.replace(/&nbsp;|&#160;/g, ' ')\n\t\t.replace(/&amp;/g, '&')\n\t\t.replace(/&quot;/g, '\"')\n\t\t.replace(/&#39;|&apos;/g, \"'\")\n\t\t.replace(/&sup2;/g, '²')\n\t\t.replace(/\\s+/g, ' ')\n\t\t.trim();\n}\n\nfunction toNumber(value) {\n\tif (typeof value === 'number') {\n\t\treturn Number.isFinite(value) ? value : 0;\n\t}\n\tif (value === null || value === undefined || value === '') {\n\t\treturn 0;\n\t}\n\tconst normalized = String(value)\n\t\t.replace(/\\u00a0/g, '')\n\t\t.replace(/\\s+/g, '')\n\t\t.replace(',', '.')\n\t\t.replace(/[^\\d.-]/g, '');\n\tconst parsed = Number(normalized);\n\treturn Number.isFinite(parsed) ? parsed : 0;\n}\n\nconst MIN_AREA_SQM = 90;\n\nfunction parseArea(value) {\n\tconst text = cleanText(value);\n\t// Match \"od 90 m²\", \"147,32 m²\", \"90.5 m2\"\n\tconst match = text.match(/(?:od\\s*)?([\\d][\\d\\s.,]*)\\s*m(?:²|2)/i);\n\treturn match ? toNumber(match[1]) : 0;\n}\n\nfunction calculateAreaFromPrice(totalPrice, pricePerM2) {\n\tconst p = toNumber(totalPrice);\n\tconst ppm = toNumber(pricePerM2);\n\tif (ppm > 0 && p > 0) {\n\t\treturn Math.round((p / ppm) * 100) / 100;\n\t}\n\treturn 0;\n}\n\nfunction stripQuery(url) {\n\treturn String(url || '').split('?')[0].trim();\n}\n\nfunction buildDetailUrl(url) {\n\treturn stripQuery(String(url || '')).trim();\n}\n\nfunction extractDistrict(locationText) {\n\tconst location = cleanText(locationText);\n\tif (!location) {\n\t\treturn 'Kraków';\n\t}\n\tconst district = location.replace(/,\\s*Krak[óo]w$/i, '').trim();\n\treturn district || 'Kraków';\n}\n\nfunction findOfferList(node) {\n\tif (!node) {\n\t\treturn [];\n\t}\n\tif (Array.isArray(node)) {\n\t\tconst directOffers = node.filter((entry) => entry && entry['@type'] === 'Offer');\n\t\tif (directOffers.length > 0) {\n\t\t\treturn directOffers;\n\t\t}\n\t\tfor (const entry of node) {\n\t\t\tconst nestedOffers = findOfferList(entry);\n\t\t\tif (nestedOffers.length > 0) {\n\t\t\t\treturn nestedOffers;\n\t\t\t}\n\t\t}\n\t\treturn [];\n\t}\n\tif (typeof node !== 'object') {\n\t\treturn [];\n\t}\n\tfor (const value of Object.values(node)) {\n\t\tconst nestedOffers = findOfferList(value);\n\t\tif (nestedOffers.length > 0) {\n\t\t\treturn nestedOffers;\n\t\t}\n\t}\n\treturn [];\n}\n\nfunction parseJsonLdOffers(html) {\n\tconst blocks = [];\n\tconst regex = /<script[^>]*type=[\"']application\\/ld\\+json[\"'][^>]*>([\\s\\S]*?)<\\/script>/gi;\n\tlet match;\n\n\twhile ((match = regex.exec(html)) !== null) {\n\t\tblocks.push(match[1]);\n\t}\n\n\tfor (const block of blocks) {\n\t\ttry {\n\t\t\tconst parsed = JSON.parse(block.trim());\n\t\t\tconst offers = findOfferList(parsed);\n\n\t\t\tif (offers.length > 0) {\n\t\t\t\treturn offers;\n\t\t\t}\n\t\t} catch (error) {\n\t\t}\n\t}\n\n\treturn [];\n}\n\nfunction buildExternalId(offer, url, index) {\n\tif (url) {\n\t\tconst idMatch = String(url).match(/\\/(\\d+)\\.html/);\n\t\tif (idMatch) return `NO-${idMatch[1]}`;\n\t\treturn `NO-${crypto.createHash('md5').update(url).digest('hex')}`;\n\t}\n\treturn `NO-${index + 1}`;\n}\n\ntry {\n\tfor (const item of items) {\n\t\tconst html = extractHtml(item);\n\t\tconst offers = parseJsonLdOffers(html);\n\n\t\tif (offers.length === 0) {\n\t\t\tcontinue;\n\t\t}\n\n\t\tfor (let index = 0; index < offers.length; index += 1) {\n\t\t\tconst offer = offers[index] || {};\n\t\t\tconst baseUrl = stripQuery(offer.url || '');\n\n\t\t\t// Skip aggregate entries that don't point to an individual offer page\n\t\t\tif (offer.url && !String(offer.url).match(/\\/\\d+\\.html/)) continue;\n\n\t\t\tconst offerId = (baseUrl.match(/\\/(\\d+)\\.html/) || [])[1] || (index + 1);\n\n\t\t\tconst totalPrice = toNumber(offer.price);\n\t\t\tconst pricePerM2 = toNumber(offer.priceSpecification && offer.priceSpecification.price);\n\t\t\tconst nameArea = parseArea(offer.name);\n\t\t\tconst area = nameArea > 0 ? nameArea : calculateAreaFromPrice(totalPrice, pricePerM2);\n\n\t\t\t// Skip offers below minimum area threshold\n\t\t\tif (area > 0 && area < MIN_AREA_SQM) continue;\n\n\t\t\tresults.push(\n\t\t\t\tclassifyOffer({\n\t\t\t\t\texternal_id: buildExternalId(offer, baseUrl, index),\n\t\t\t\t\turl: buildDetailUrl(baseUrl),\n\t\t\t\t\tcategory: 'mieszkanie-krakow',\n\t\t\t\t\ttitle: cleanText(offer.name) || `Oferta NO: ${offerId}`,\n\t\t\t\t\tprice: totalPrice,\n\t\t\t\t\tprice_per_m2: pricePerM2,\n\t\t\t\t\tarea: area,\n\t\t\t\t\tlot_size: 0,\n\t\t\t\t\tconstruction_year: 0,\n\t\t\t\t\tcreated_at: new Date().toISOString(),\n\t\t\t\t\tproperty_portal: 'Nieruchomości online',\n\t\t\t\t\tlocation_text: 'Kraków',\n\t\t\t\t\tdistrict: 'Kraków',\n\t\t\t\t\tmarket_type: 'residential',\n\t\t\t\t\tsource_offer_id: '',\n\t\t\t\t})\n\t\t\t);\n\t\t}\n\t}\n} catch (error) {\n\treturn [{ json: { error: `Level 2 parsing error: ${error.message}` } }];\n}\n\nconst uniqueMap = new Map();\nresults.forEach((result) => uniqueMap.set(result.external_id, result));\n\nreturn Array.from(uniqueMap.values()).map((json) => ({ json }));\n"
+        "mode": "runOnceForAllItems",
+        "jsCode": "const crypto = require('crypto');\nconst items = $input.all();\nconst run = $node['tlm-init-run']?.json || {};\nconst runId = String(run.run_id || '').trim() || null;\nfunction classifyOffer(offer) { return { ...offer, geo_status: 'unknown', geo_confidence: 'low', geo_reason: 'Krakow detected but district is missing or unsupported.', policy_version: 'south-krakow-v1', is_exception_candidate: false, review_status: 'pending', is_soft_blocked: true, needs_manual_review: true, excluded_from_feedback_loop: true, is_in_trash: false }; }\nfunction extractHtml(item) { if (item.binary && item.binary.data) return Buffer.from(item.binary.data.data, 'base64').toString('utf-8'); if (typeof item === 'string') return item; if (item && item.data) return item.data; if (typeof item.json === 'string') return item.json; if (item.json && item.json.data) return item.json.data; return JSON.stringify(item.json || item); }\nfunction cleanText(value) { if (!value) return ''; return String(value).replace(/<[^>]+>/g, ' ').replace(/&nbsp;|&#160;/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '\"').replace(/&#39;|&apos;/g, \"'\").replace(/&sup2;/g, '²').replace(/\\s+/g, ' ').trim(); }\nfunction toNumber(value) { if (typeof value === 'number') return Number.isFinite(value) ? value : 0; if (value === null || value === undefined || value === '') return 0; const normalized = String(value).replace(/\\u00a0/g, '').replace(/\\s+/g, '').replace(',', '.').replace(/[^\\d.-]/g, ''); const parsed = Number(normalized); return Number.isFinite(parsed) ? parsed : 0; }\nfunction parseAreaFromText(value) { const text = cleanText(value); const match = text.match(/([\\d.,]+)\\s*m(?:²|2)/i); return match ? toNumber(match[1]) : 0; }\nfunction stripQuery(url) { return String(url || '').split('?')[0].trim(); }\nfunction normalizeNoHost(url) { const raw = String(url || '').trim(); if (!raw) return ''; return raw.replace(/^https?:\\/\\/krakow\\.nieruchomosci-online\\.pl/i, 'https://www.nieruchomosci-online.pl'); }\nfunction findOffers(node, out) { if (!node) return; if (Array.isArray(node)) { node.forEach((entry) => findOffers(entry, out)); return; } if (typeof node !== 'object') return; if (node['@type'] === 'Offer') out.push(node); Object.values(node).forEach((value) => findOffers(value, out)); }\nfunction parseJsonLdOffers(html) { const blocks = [...html.matchAll(/<script[^>]*type=[\"']application\\/ld\\+json[\"'][^>]*>([\\s\\S]*?)<\\/script>/gi)]; const offers = []; for (const block of blocks) { try { const parsed = JSON.parse((block[1] || '').trim()); findOffers(parsed, offers); } catch (error) {} } return offers; }\nfunction collectDebugStats(html, offersCount) { const normalized = String(html || ''); const lower = normalized.toLowerCase(); const is404 = lower.includes('strona błędu 404') || lower.includes('strona bledu 404') || lower.includes('ups... chyba ktos glodny zjadl te strone') || lower.includes('ups... chyba ktoś głodny zjadł tę stronę'); const jsonLdBlocks = [...normalized.matchAll(/<script[^>]*type=[\"']application\\/ld\\+json[\"'][^>]*>/gi)].length; const concreteOfferLinks = [...normalized.matchAll(/\\/\\d{7,10}\\.html/gi)].length; return { is_404: is404, jsonld_blocks: jsonLdBlocks, jsonld_offer_nodes: offersCount, concrete_offer_links: concreteOfferLinks, html_length: normalized.length }; }\nfunction buildExternalId(url, index) { const idMatch = String(url).match(/\\/(\\d{7,10})\\.html/i); if (idMatch) return `NO-${idMatch[1]}`; if (url) return `NO-${crypto.createHash('md5').update(url).digest('hex')}`; return `NO-${index + 1}`; }\ntry { const results = []; const diagnostics = []; for (const item of items) { const html = extractHtml(item); const offers = parseJsonLdOffers(html); diagnostics.push(collectDebugStats(html, offers.length)); for (let index = 0; index < offers.length; index += 1) { const offer = offers[index] || {}; const rawUrl = normalizeNoHost(stripQuery(offer.url || '')); if (!/\\/(\\d{7,10})\\.html/i.test(rawUrl)) continue; const title = cleanText(offer.name || (offer.itemOffered && offer.itemOffered.name)); const area = toNumber(offer.itemOffered && offer.itemOffered.floorSize && (offer.itemOffered.floorSize.value || offer.itemOffered.floorSize)) || parseAreaFromText(title); const pricePerM2 = toNumber(offer.priceSpecification && offer.priceSpecification.price) || (area > 0 ? Math.round((toNumber(offer.price) / area) * 100) / 100 : 0); results.push(classifyOffer({ external_id: buildExternalId(rawUrl, index), url: rawUrl, category: 'mieszkanie-krakow', title: title || `Oferta NO: ${index + 1}`, price: toNumber(offer.price), price_per_m2: pricePerM2, area, lot_size: 0, construction_year: 0, created_at: new Date().toISOString(), property_portal: 'Nieruchomości online', location_text: 'Kraków', district: 'Kraków', market_type: 'residential', source_offer_id: '', portal_source: 'no', run_id: runId })); } } const uniqueMap = new Map(); results.forEach((result) => uniqueMap.set(result.external_id, result)); const uniqueResults = Array.from(uniqueMap.values()); if (uniqueResults.length === 0) { return []; } const mainItems = uniqueResults.map((json) => ({ json })); return mainItems; } catch (error) { return []; }"
       },
       "id": "f9ee36df-0791-4d1b-9f02-5137142c7aac",
       "name": "js-no-apartments",
@@ -455,7 +538,7 @@
     },
     {
       "parameters": {
-        "content": "## Real Estate AI Agent\n\n**Version:** `1.2.0`\n**Git SHA:** `3b36ee2`\n**Built:** `2026-05-19`\n\nUpload check:\n- workflow name is `Real Estate AI Agent`\n- metadata node is `Workflow Metadata - v1.2.0`",
+        "content": "## Real Estate AI Agent\n\n**Version:** `1.6.0`\n**Git SHA:** `75c39b5`\n**Built:** `2026-05-25`\n\nUpload check:\n- workflow name is `Real Estate AI Agent`\n- metadata node is `Workflow Metadata - v1.6.0`",
         "height": 240,
         "width": 560,
         "color": 4
@@ -471,10 +554,10 @@
     },
     {
       "parameters": {
-        "jsCode": "return [{\n  json: {\n    \"workflow_name\": \"Real Estate AI Agent\",\n    \"workflow_version\": \"1.2.0\",\n    \"workflow_display_name\": \"Real Estate AI Agent\",\n    \"git_sha\": \"3b36ee2\",\n    \"build_date\": \"2026-05-19\",\n    \"workflow_file\": \"n8n/workflows/Real Estate AI Agent.json\",\n    \"version_source\": \"n8n/workflows/Real Estate AI Agent.json\"\n  }\n}];"
+        "jsCode": "return [{\n  json: {\n    \"workflow_name\": \"Real Estate AI Agent\",\n    \"workflow_version\": \"1.6.0\",\n    \"workflow_display_name\": \"Real Estate AI Agent\",\n    \"git_sha\": \"75c39b5\",\n    \"build_date\": \"2026-05-25\",\n    \"workflow_file\": \"n8n/workflows/Real Estate AI Agent.json\",\n    \"version_source\": \"n8n/workflows/Real Estate AI Agent.json\"\n  }\n}];"
       },
       "id": "workflow-metadata-node",
-      "name": "Workflow Metadata - v1.2.0",
+      "name": "Workflow Metadata - v1.6.0",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -549,7 +632,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const allHtmlInputs = $input.all();\nconst allOffersFromSql = $(\"sql-add-offer\").all();\n\nfunction decodeHtmlEntities(text) {\n  return String(text || '')\n    .replace(/&nbsp;/gi, ' ')\n    .replace(/&amp;/gi, '&')\n    .replace(/&quot;/gi, '\"')\n    .replace(/&#39;|&apos;/gi, \"'\")\n    .replace(/&lt;/gi, '<')\n    .replace(/&gt;/gi, '>');\n}\n\nfunction htmlToAiText(html) {\n  const source = String(html || '');\n  if (!source) return '';\n\n  let text = source\n    .replace(/<script\\b[^>]*>[\\s\\S]*?<\\/script>/gi, ' ')\n    .replace(/<style\\b[^>]*>[\\s\\S]*?<\\/style>/gi, ' ')\n    .replace(/<noscript\\b[^>]*>[\\s\\S]*?<\\/noscript>/gi, ' ')\n    .replace(/<svg\\b[^>]*>[\\s\\S]*?<\\/svg>/gi, ' ')\n    .replace(/<\\/(p|div|li|h1|h2|h3|h4|h5|h6|tr|section|article|br)>/gi, '\\n')\n    .replace(/<[^>]+>/g, ' ');\n\n  text = decodeHtmlEntities(text)\n    .replace(/\\r/g, '\\n')\n    .replace(/\\n{3,}/g, '\\n\\n')\n    .replace(/[ \\t]{2,}/g, ' ')\n    .trim();\n\n  const MAX_CHARS = 24000;\n  if (text.length > MAX_CHARS) {\n    text = text.slice(0, MAX_CHARS) + '\\n\\n[TRUNCATED_FOR_TOKEN_LIMIT]';\n  }\n\n  return text;\n}\n\nreturn allHtmlInputs.map((htmlItem, index) => {\n  const sqlRecord = allOffersFromSql[index] ? allOffersFromSql[index].json : {};\n  const htmlContent = htmlItem.json.data || 'No content';\n\n  return {\n    ...sqlRecord,\n    raw_md: htmlToAiText(htmlContent),\n    ai_input_md: htmlToAiText(htmlContent)\n  };\n});"
+        "jsCode": "const responses = $input.all();\nconst sourceOffers = $('tlm-attach-run-id').all();\n\nfunction decodeHtmlEntities(text) {\n  return String(text || '')\n    .replace(/&nbsp;/gi, ' ')\n    .replace(/&amp;/gi, '&')\n    .replace(/&quot;/gi, '\"')\n    .replace(/&#39;|&apos;/gi, \"'\")\n    .replace(/&lt;/gi, '<')\n    .replace(/&gt;/gi, '>');\n}\n\nfunction htmlToAiText(html) {\n  const source = String(html || '');\n  if (!source) return '';\n\n  let text = source\n    .replace(/<script\\b[^>]*>[\\s\\S]*?<\\/script>/gi, ' ')\n    .replace(/<style\\b[^>]*>[\\s\\S]*?<\\/style>/gi, ' ')\n    .replace(/<noscript\\b[^>]*>[\\s\\S]*?<\\/noscript>/gi, ' ')\n    .replace(/<svg\\b[^>]*>[\\s\\S]*?<\\/svg>/gi, ' ')\n    .replace(/<\\/(p|div|li|h1|h2|h3|h4|h5|h6|tr|section|article|br)>/gi, '\\n')\n    .replace(/<[^>]+>/g, ' ');\n\n  text = decodeHtmlEntities(text)\n    .replace(/\\r/g, '\\n')\n    .replace(/\\n{3,}/g, '\\n\\n')\n    .replace(/[ \\t]{2,}/g, ' ')\n    .trim();\n\n  const MAX_CHARS = 24000;\n  if (text.length > MAX_CHARS) {\n    text = text.slice(0, MAX_CHARS) + '\\n\\n[TRUNCATED_FOR_TOKEN_LIMIT]';\n  }\n\n  return text;\n}\n\nfunction getStatusCode(item) {\n  return Number(item.json.statusCode ?? item.json.status ?? item.json.httpCode ?? 0);\n}\n\nfunction getHtmlBody(item) {\n  return String(item.json.body ?? item.json.data ?? '').trim();\n}\n\nconst mergedItems = [];\n\nfor (let index = 0; index < responses.length; index += 1) {\n  const responseItem = responses[index];\n  const sourceItem = sourceOffers[index]?.json;\n\n  if (!sourceItem) {\n    continue;\n  }\n\n  const statusCode = getStatusCode(responseItem);\n  if (statusCode >= 400) {\n    continue;\n  }\n\n  const html = getHtmlBody(responseItem);\n  if (!html) {\n    continue;\n  }\n\n  mergedItems.push({\n    json: {\n      ...sourceItem,\n      raw_md: htmlToAiText(html),\n      ai_input_md: htmlToAiText(html),\n      fetch_status_code: statusCode || null,\n    },\n  });\n}\n\nreturn mergedItems;"
       },
       "id": "cd03e152-0a69-46cf-90f3-ac92a0eb2af8",
       "name": "js-merge-with-desc",
@@ -557,32 +640,6 @@
       "position": [
         83472,
         22208
-      ],
-      "typeVersion": 2
-    },
-    {
-      "parameters": {
-        "jsCode": "const items = $input.all();\nconst html = items[0].json.data || \"\";\n\nif (!html || html.length < 100) {\n    return [{ json: { error: \"No HTML content found\" } }];\n}\n\nfunction extractText(html, regex) {\n    const m = html.match(regex);\n    return m ? m[1].trim() : \"\";\n}\n\nfunction parseNumber(str) {\n    if (!str) return 0;\n    const cleaned = str.replace(/\\s/g, \"\").replace(\",\", \".\");\n    const n = parseFloat(cleaned);\n    return isNaN(n) ? 0 : n;\n}\n\nfunction extractSpec(html, label) {\n    const re = new RegExp(\n        '<p class=\"spacificationLabel\">[^<]*?' + label + '[^<]*?</p>\\\\s*<p class=\"spacificationValue\">([\\\\s\\\\S]*?)</p>',\n        \"i\"\n    );\n    const m = html.match(re);\n    if (!m) return \"\";\n    return m[1].replace(/<[^>]+>/g, \"\").trim();\n}\n\nconst refId = extractText(html, /<p class=\"subHeader\">\\s*(.*?)\\s*<\\/p>/);\nconst url = extractText(html, /<link rel=\"canonical\" href=\"([^\"]+)\"/);\n\nlet title = extractText(html, /<h1[^>]*>\\s*([\\s\\S]*?)\\s*<\\/h1>/);\ntitle = title.replace(/<[^>]+>/g, \"\").trim();\n\nconst priceRaw = extractText(html, /<h2 class=\"h3\">\\s*([\\s\\S]*?)\\s*<span class=\"price-for-m2\"/);\nconst price = parseNumber(priceRaw.replace(/<[^>]+>/g, \"\").replace(/PLN|zł/gi, \"\"));\n\nconst ppm2Raw = extractText(html, /class=\"price-for-m2\"[^>]*>([\\s\\S]*?)<\\/span>/);\nconst pricePerM2 = parseNumber(ppm2Raw.replace(/<[^>]+>/g, \"\").replace(/zł za m2?/gi, \"\"));\n\nconst areaRaw = extractSpec(html, \"Powierzchnia\");\nconst area = parseNumber(areaRaw.replace(/m2?/gi, \"\"));\n\nconst roomsRaw = extractSpec(html, \"Ilość pokoi\");\nconst rooms = parseNumber(roomsRaw) || 0;\n\nreturn [{\n    json: {\n        external_id: \"TS-\" + (refId ? refId.replace(/\\//g, \"-\") : Date.now()),\n        category: \"mieszkanie-krakow\",\n        url: url,\n        title: \"Oferta TS: \" + (title || refId),\n        price: price,\n        price_per_m2: pricePerM2,\n        area: area,\n        rooms: rooms,\n        lot_size: 0,\n        construction_year: 0,\n        created_at: new Date().toISOString(),\n        property_portal: 'Tecnocasa',\n        raw_md: html\n    }\n}];\n"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        81680,
-        22016
-      ],
-      "id": "9f63be4e-b442-4f95-9dff-f384e7fb4a03",
-      "name": "js-ts-parser"
-    },
-    {
-      "parameters": {
-        "jsCode": "const items = $input.all();\nconst html = items[0].json.data || \"\";\n\nconst jsonMatch = html.match(/<script\\b[^>]*type=\"application\\/json\"[^>]*>([\\s\\S]*?pageProps[\\s\\S]*?)<\\/script>/);\n\nif (!jsonMatch) {\n    return [{ json: { error: \"Failed to extract JSON with offers\" } }];\n}\n\ntry {\n    const fullData = JSON.parse(jsonMatch[1].trim());\n    const ads = fullData?.props?.pageProps?.data?.searchAds?.items || \n                fullData?.props?.pageProps?.apolloState?.data?.searchAds?.items || [];\n\n    if (ads.length === 0) return [];\n\n    return ads.map(ad => ({\n        json: {\n            external_id: \"OT-\" + ad.id,\n            category: \"mieszkanie-krakow\",\n            url: \"https://www.otodom.pl/pl/oferta/\" + ad.slug,\n            title: \"Oferta OT: \" + ad.title,\n            price: ad.totalPrice?.value || 0,\n            price_per_m2: ad.pricePerSquareMeter?.value || 0,\n            area: ad.areaInSquareMeters || 0,\n            rooms: ad.roomsNumber || 0,\n            lot_size: 0,\n            construction_year: 0,\n            created_at: new Date().toISOString(),\n            property_portal: 'Otodom'          \n        }\n    }));\n\n} catch (e) {\n    return [{ json: { error: \"JSON parsing error: \" + e.message } }];\n}"
-      },
-      "id": "a8bee77d-fb43-4d3f-920f-030044c1e7c4",
-      "name": "js-od-parser",
-      "type": "n8n-nodes-base.code",
-      "position": [
-        82128,
-        22432
       ],
       "typeVersion": 2
     },
@@ -606,6 +663,102 @@
           }
         }
       },
+      "id": "d4ef0eef-58c4-4f05-a0dc-4090ea56cbef",
+      "name": "hr-offer-details-ai",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [
+        83248,
+        22304
+      ],
+      "typeVersion": 4.4
+    },
+    {
+      "parameters": {
+        "jsCode": "const allHtmlInputs = $input.all();\nconst allOffersFromSql = $('sql-add-offer').all();\n\nfunction decodeHtmlEntities(text) {\n  return String(text || '')\n    .replace(/&nbsp;/gi, ' ')\n    .replace(/&amp;/gi, '&')\n    .replace(/&quot;/gi, '\"')\n    .replace(/&#39;|&apos;/gi, \"'\")\n    .replace(/&lt;/gi, '<')\n    .replace(/&gt;/gi, '>');\n}\n\nfunction htmlToAiText(html) {\n  const source = String(html || '');\n  if (!source) return '';\n\n  let text = source\n    .replace(/<script\\b[^>]*>[\\s\\S]*?<\\/script>/gi, ' ')\n    .replace(/<style\\b[^>]*>[\\s\\S]*?<\\/style>/gi, ' ')\n    .replace(/<noscript\\b[^>]*>[\\s\\S]*?<\\/noscript>/gi, ' ')\n    .replace(/<svg\\b[^>]*>[\\s\\S]*?<\\/svg>/gi, ' ')\n    .replace(/<\\/(p|div|li|h1|h2|h3|h4|h5|h6|tr|section|article|br)>/gi, '\\n')\n    .replace(/<[^>]+>/g, ' ');\n\n  text = decodeHtmlEntities(text)\n    .replace(/\\r/g, '\\n')\n    .replace(/\\n{3,}/g, '\\n\\n')\n    .replace(/[ \\t]{2,}/g, ' ')\n    .trim();\n\n  const MAX_CHARS = 24000;\n  if (text.length > MAX_CHARS) {\n    text = text.slice(0, MAX_CHARS) + '\\n\\n[TRUNCATED_FOR_TOKEN_LIMIT]';\n  }\n\n  return text;\n}\n\nreturn allHtmlInputs.map((htmlItem, index) => {\n  const sqlRecord = allOffersFromSql[index] ? allOffersFromSql[index].json : {};\n  const htmlContent = htmlItem.json.data || 'No content';\n\n  return {\n    ...sqlRecord,\n    raw_md: htmlToAiText(htmlContent),\n    ai_input_md: htmlToAiText(htmlContent)\n  };\n});"
+      },
+      "id": "4ca9f3b8-7890-498d-8fb3-09d6af7790cf",
+      "name": "js-merge-with-desc-ai",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        83472,
+        22304
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst html = items[0].json.data || \"\";\n\nif (!html || html.length < 100) {\n    return [{ json: { error: \"No HTML content found\" } }];\n}\n\nfunction extractText(html, regex) {\n    const m = html.match(regex);\n    return m ? m[1].trim() : \"\";\n}\n\nfunction parseNumber(str) {\n    if (!str) return 0;\n    const cleaned = str.replace(/\\s/g, \"\").replace(\",\", \".\");\n    const n = parseFloat(cleaned);\n    return isNaN(n) ? 0 : n;\n}\n\nfunction extractSpec(html, label) {\n    const re = new RegExp(\n        '<p class=\"spacificationLabel\">[^<]*?' + label + '[^<]*?</p>\\\\s*<p class=\"spacificationValue\">([\\\\s\\\\S]*?)</p>',\n        \"i\"\n    );\n    const m = html.match(re);\n    if (!m) return \"\";\n    return m[1].replace(/<[^>]+>/g, \"\").trim();\n}\n\nconst refId = extractText(html, /<p class=\"subHeader\">\\s*(.*?)\\s*<\\/p>/);\nconst url = extractText(html, /<link rel=\"canonical\" href=\"([^\"]+)\"/);\n\nlet title = extractText(html, /<h1[^>]*>\\s*([\\s\\S]*?)\\s*<\\/h1>/);\ntitle = title.replace(/<[^>]+>/g, \"\").trim();\n\nconst priceRaw = extractText(html, /<h2 class=\"h3\">\\s*([\\s\\S]*?)\\s*<span class=\"price-for-m2\"/);\nconst price = parseNumber(priceRaw.replace(/<[^>]+>/g, \"\").replace(/PLN|zł/gi, \"\"));\n\nconst ppm2Raw = extractText(html, /class=\"price-for-m2\"[^>]*>([\\s\\S]*?)<\\/span>/);\nconst pricePerM2 = parseNumber(ppm2Raw.replace(/<[^>]+>/g, \"\").replace(/zł za m2?/gi, \"\"));\n\nconst areaRaw = extractSpec(html, \"Powierzchnia\");\nconst area = parseNumber(areaRaw.replace(/m2?/gi, \"\"));\n\nconst roomsRaw = extractSpec(html, \"Ilość pokoi\");\nconst rooms = parseNumber(roomsRaw) || 0;\n\nreturn [{\n    json: {\n        external_id: \"TS-\" + (refId ? refId.replace(/\\//g, \"-\") : Date.now()),\n        category: \"mieszkanie-krakow\",\n        url: url,\n        title: \"Oferta TS: \" + (title || refId),\n        price: price,\n        price_per_m2: pricePerM2,\n        area: area,\n        rooms: rooms,\n        lot_size: 0,\n        construction_year: 0,\n        created_at: new Date().toISOString(),\n        property_portal: 'Tecnocasa',\n        raw_md: html\n    }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        81680,
+        22016
+      ],
+      "id": "9f63be4e-b442-4f95-9dff-f384e7fb4a03",
+      "name": "js-ts-parser"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst run = $node['tlm-init-run']?.json || {};\nconst runId = String(run.run_id || '').trim() || null;\nconst html = items[0]?.json?.data || '';\nif (!html) return [];\nconst jsonMatch = html.match(/<script\\b[^>]*type=\"application\\/json\"[^>]*>([\\s\\S]*?pageProps[\\s\\S]*?)<\\/script>/);\nif (!jsonMatch) return [];\ntry { const fullData = JSON.parse(jsonMatch[1].trim()); const ads = fullData?.props?.pageProps?.data?.searchAds?.items || fullData?.props?.pageProps?.apolloState?.data?.searchAds?.items || []; const offers = ads.map((ad) => ({ json: { external_id: 'OT-' + ad.id, category: 'mieszkanie-krakow', url: 'https://www.otodom.pl/pl/oferta/' + ad.slug, title: 'Oferta OT: ' + ad.title, price: ad.totalPrice?.value || 0, price_per_m2: ad.pricePerSquareMeter?.value || 0, area: ad.areaInSquareMeters || 0, rooms: ad.roomsNumber || 0, lot_size: 0, construction_year: 0, created_at: new Date().toISOString(), property_portal: 'Otodom', portal_source: 'otodom', run_id: runId } })); return offers; } catch (error) { return []; }"
+      },
+      "id": "a8bee77d-fb43-4d3f-920f-030044c1e7c4",
+      "name": "js-od-parser",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        82128,
+        22432
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst stageKey = 'parse_list';\nconst stageOrder = 1;\nreturn items.filter((item) => item.json?.external_id && item.json?.url).map((item) => ({ json: { run_id: item.json.run_id, stage_key: stageKey, stage_order: stageOrder, external_id: item.json.external_id, url: item.json.url, event_type: 'entered', event_reason: null, payload: { portal_source: 'otodom' } } }));"
+      },
+      "id": "a99d9550-8215-460d-9fe8-8cac6ca45360",
+      "name": "tlm-od-parse-list-events",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        82352,
+        22496
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst stageKey = 'parse_list';\nconst stageOrder = 1;\nreturn items.filter((item) => item.json?.external_id && item.json?.url).map((item) => ({ json: { run_id: item.json.run_id, stage_key: stageKey, stage_order: stageOrder, external_id: item.json.external_id, url: item.json.url, event_type: 'entered', event_reason: null, payload: { portal_source: 'no' } } }));"
+      },
+      "id": "9325e6ff-f036-43c9-a559-075cf1ea5d58",
+      "name": "tlm-no-parse-list-events",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        82352,
+        22240
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text",
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
       "id": "0ccaeedc-7aa2-4763-b086-0b2fcd93536d",
       "name": "hr-offer-details",
       "type": "n8n-nodes-base.httpRequest",
@@ -614,6 +767,58 @@
         22208
       ],
       "typeVersion": 4.4
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst sourceOffers = $('tlm-attach-run-id').all();\n\nfunction mapReason(responseItem) {\n  const explicitStatus = Number(responseItem.json.statusCode ?? responseItem.json.status ?? responseItem.json.httpCode ?? 0);\n  const errorMessage = String(responseItem.json.error || responseItem.json.message || '').toLowerCase();\n\n  if (explicitStatus === 404) return 'http_404';\n  if (explicitStatus === 403) return 'http_403';\n  if (errorMessage.includes('timeout') || explicitStatus === 408 || explicitStatus === 504) return 'http_timeout';\n  if (explicitStatus >= 400) return 'http_other';\n\n  const html = String(responseItem.json.body ?? responseItem.json.data ?? '').trim();\n  if (!html) return 'http_other';\n\n  return null;\n}\n\nreturn items.map((responseItem, index) => {\n  const source = sourceOffers[index]?.json || {};\n  const reason = mapReason(responseItem);\n\n  return {\n    json: {\n      run_id: source.run_id,\n      stage_key: 'fetch_detail',\n      stage_order: 2,\n      external_id: source.external_id,\n      url: source.url,\n      event_type: reason ? 'dropped' : 'passed',\n      event_reason: reason,\n      payload: {\n        status_code: responseItem.json.statusCode ?? responseItem.json.status ?? responseItem.json.httpCode ?? null,\n      },\n    },\n  };\n});"
+      },
+      "id": "95c478eb-f71c-4874-aaf5-343bf6d38d66",
+      "name": "tlm-fetch-detail-events",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        83472,
+        22592
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "const responses = $input.all();\nconst sourceOffers = $('tlm-attach-run-id').all();\nfunction getStatusCode(item) { return Number(item.json.statusCode ?? item.json.status ?? item.json.httpCode ?? 0); }\nfunction getHtmlBody(item) { return String(item.json.body ?? item.json.data ?? '').trim(); }\nconst events = [];\nfor (let index = 0; index < responses.length; index += 1) { const responseItem = responses[index]; const sourceItem = sourceOffers[index]?.json; if (!sourceItem) { events.push({ json: { run_id: null, stage_key: 'merge_detail', stage_order: 3, external_id: null, url: null, event_type: 'dropped', event_reason: 'length_mismatch', payload: {} } }); continue; } const statusCode = getStatusCode(responseItem); if (statusCode >= 400) { continue; } const html = getHtmlBody(responseItem); if (!html) { events.push({ json: { run_id: sourceItem.run_id, stage_key: 'merge_detail', stage_order: 3, external_id: sourceItem.external_id, url: sourceItem.url, event_type: 'dropped', event_reason: 'missing_detail', payload: { status_code: statusCode || null } } }); continue; } events.push({ json: { run_id: sourceItem.run_id, stage_key: 'merge_detail', stage_order: 3, external_id: sourceItem.external_id, url: sourceItem.url, event_type: 'passed', event_reason: null, payload: { status_code: statusCode || null } } }); } if (sourceOffers.length > responses.length) { for (let index = responses.length; index < sourceOffers.length; index += 1) { const sourceItem = sourceOffers[index]?.json; if (!sourceItem) { continue; } events.push({ json: { run_id: sourceItem.run_id, stage_key: 'merge_detail', stage_order: 3, external_id: sourceItem.external_id, url: sourceItem.url, event_type: 'dropped', event_reason: 'length_mismatch', payload: {} } }); } } return events;"
+      },
+      "id": "8fed7b05-5463-4d3b-8801-bd6774be9f39",
+      "name": "tlm-merge-detail-events",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        83696,
+        22688
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nif (items.length === 0) {\n  return [];\n}\n\nconst runId = items[0]?.json?.run_id;\nif (!runId || String(runId).trim() === '' || String(runId).toLowerCase() === 'undefined') {\n  return [];\n}\n\nlet passed = 0;\nlet dropped = 0;\nlet errorCount = 0;\nconst dropsByReason = {};\n\nfor (const item of items) {\n  if (item.json.event_type === 'passed') {\n    passed += 1;\n    continue;\n  }\n\n  if (item.json.event_type === 'dropped') {\n    dropped += 1;\n    errorCount += 1;\n    const reason = String(item.json.event_reason || 'http_other');\n    dropsByReason[reason] = (dropsByReason[reason] || 0) + 1;\n  }\n}\n\nreturn [\n  {\n    json: {\n      run_id: runId,\n      stage_key: 'fetch_detail',\n      stage_order: 2,\n      input_count: items.length,\n      output_count: passed,\n      dropped_count: dropped,\n      error_count: errorCount,\n      metadata: {\n        drops: dropsByReason,\n      },\n    },\n  },\n];"
+      },
+      "id": "738cb709-b9c1-4300-afd8-c09e98a88692",
+      "name": "tlm-fetch-detail-summary",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        83696,
+        22592
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nif (items.length === 0) {\n  return [];\n}\n\nconst runId = items[0]?.json?.run_id;\nif (!runId || String(runId).trim() === '' || String(runId).toLowerCase() === 'undefined') {\n  return [];\n}\n\nlet passed = 0;\nlet dropped = 0;\nconst dropsByReason = {};\n\nfor (const item of items) {\n  if (item.json.event_type === 'passed') {\n    passed += 1;\n    continue;\n  }\n\n  if (item.json.event_type === 'dropped') {\n    dropped += 1;\n    const reason = String(item.json.event_reason || 'missing_detail');\n    dropsByReason[reason] = (dropsByReason[reason] || 0) + 1;\n  }\n}\n\nreturn [\n  {\n    json: {\n      run_id: runId,\n      stage_key: 'merge_detail',\n      stage_order: 3,\n      input_count: items.length,\n      output_count: passed,\n      dropped_count: dropped,\n      error_count: 0,\n      metadata: {\n        drops: dropsByReason,\n      },\n    },\n  },\n];"
+      },
+      "id": "11bfe79c-176a-46bf-bd89-1b27248b302c",
+      "name": "tlm-merge-detail-summary",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        83920,
+        22592
+      ],
+      "typeVersion": 2
     },
     {
       "parameters": {
@@ -707,6 +912,19 @@
       "position": [
         82464,
         22192
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nif (items.length === 0) return [];\nconst runId = items[0]?.json?.run_id;\nif (!runId || String(runId).trim() === '' || String(runId).toLowerCase() === 'undefined') return [];\nconst byPortal = {};\nfor (const item of items) { const portal = String(item.json.portal_source || item.json.property_portal || 'unknown').trim().toLowerCase(); const normalizedPortal = portal === 'nieruchomości online' || portal === 'nieruchomosci online' || portal === 'no' ? 'no' : portal === 'otodom' ? 'otodom' : portal; byPortal[normalizedPortal] = (byPortal[normalizedPortal] || 0) + 1; }\nreturn [{ json: { run_id: runId, stage_key: 'parse_list', stage_order: 1, input_count: items.length, output_count: items.length, dropped_count: 0, error_count: 0, metadata: { by_portal: byPortal } } }];"
+      },
+      "id": "tlm-parse-list-summary-1748160800000",
+      "name": "tlm-parse-list-summary",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        82752,
+        22592
       ],
       "typeVersion": 2
     },
@@ -1005,6 +1223,19 @@
           "name": "Postgres account"
         }
       }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nreturn items.filter((item) => {\n  const externalId = String(item.json?.ai_parsed?.external_id || item.json?.external_id || '').trim();\n  const aiRating = Number(item.json?.ai_parsed?.ai_rating);\n\n  if (!externalId) {\n    return false;\n  }\n\n  if (!Number.isFinite(aiRating) || aiRating < 1 || aiRating > 10) {\n    return false;\n  }\n\n  return true;\n});"
+      },
+      "id": "0d6f5e30-a314-4f7d-8b8a-c4c222769101",
+      "name": "js-aia-require-complete-output",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        85184,
+        22400
+      ],
+      "typeVersion": 2
     },
     {
       "parameters": {
@@ -1610,6 +1841,19 @@
     },
     {
       "parameters": {
+        "jsCode": "const items = $input.all();\n\nreturn items.filter((item) => {\n  const externalId = String(item.json?.ai_parsed?.external_id || item.json?.external_id || '').trim();\n  const aiRating = Number(item.json?.ai_parsed?.ai_rating);\n\n  if (!externalId) {\n    return false;\n  }\n\n  if (!Number.isFinite(aiRating) || aiRating < 1 || aiRating > 10) {\n    return false;\n  }\n\n  return true;\n});"
+      },
+      "id": "d117b895-b6ba-4370-8398-77a376d4bff0",
+      "name": "js-single-offer-aia-require-complete-output",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        84992,
+        22624
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
         "operation": "executeQuery",
         "query": "INSERT INTO rea_import_run_offer_events\n    (run_id, stage_key, stage_order, external_id, url, event_type, event_reason, payload)\nVALUES (\n    '{{ String($json.run_id || '').replace(/'/g, \"''\") }}',\n    '{{ String($json.stage_key || '').replace(/'/g, \"''\") }}',\n    {{ Number($json.stage_order) || 0 }},\n    '{{ String($json.external_id || '').replace(/'/g, \"''\") }}',\n    {{ $json.url ? \"'\" + String($json.url).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    '{{ String($json.event_type || '').replace(/'/g, \"''\") }}',\n    {{ $json.event_reason ? \"'\" + String($json.event_reason).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    '{{ (() => { const payload = $json.payload; const text = typeof payload === 'string' ? payload : JSON.stringify(payload ?? {}); return text.replace(/'/g, \"''\"); })() }}'::jsonb\n);",
         "options": {
@@ -1647,7 +1891,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO rea_import_run_stage_metrics\n    (run_id, stage_key, stage_order, input_count, output_count, dropped_count, metadata)\nVALUES (\n    '{{ String($json.run_id || '').replace(/'/g, \"''\") }}',\n    '{{ String($json.stage_key || '').replace(/'/g, \"''\") }}',\n    {{ Number($json.stage_order) || 0 }},\n    {{ Number($json.input_count) || 0 }},\n    {{ Number($json.output_count) || 0 }},\n    {{ Number($json.dropped_count) || 0 }},\n    '{{ (() => { const metadata = $json.metadata; const text = typeof metadata === 'string' ? metadata : JSON.stringify(metadata ?? {}); return text.replace(/'/g, \"''\"); })() }}'::jsonb\n)\nON CONFLICT (run_id, stage_key) DO UPDATE SET\n    input_count = EXCLUDED.input_count,\n    output_count = EXCLUDED.output_count,\n    dropped_count = EXCLUDED.dropped_count,\n    metadata = EXCLUDED.metadata;",
+        "query": "INSERT INTO rea_import_run_stage_metrics\n    (run_id, stage_key, stage_order, input_count, output_count, dropped_count, error_count, metadata)\nVALUES (\n    '{{ String($json.run_id || '').replace(/'/g, \"''\") }}',\n    '{{ String($json.stage_key || '').replace(/'/g, \"''\") }}',\n    {{ Number($json.stage_order) || 0 }},\n    {{ Number($json.input_count) || 0 }},\n    {{ Number($json.output_count) || 0 }},\n    {{ Number($json.dropped_count) || 0 }},\n    {{ Number($json.error_count) || 0 }},\n    '{{ (() => { const metadata = $json.metadata; const text = typeof metadata === 'string' ? metadata : JSON.stringify(metadata ?? {}); return text.replace(/'/g, \"''\"); })() }}'::jsonb\n)\nON CONFLICT (run_id, stage_key) DO UPDATE SET\n    input_count = EXCLUDED.input_count,\n    output_count = EXCLUDED.output_count,\n    dropped_count = EXCLUDED.dropped_count,\n    error_count = EXCLUDED.error_count,\n    metadata = EXCLUDED.metadata;",
         "options": {
           "queryReplacement": "="
         }
@@ -1754,6 +1998,27 @@
         83472,
         22016
       ]
+    },
+    {
+      "parameters": {
+        "model": "mistral-nemo:12b-instruct-2407-q8_0",
+        "options": {},
+        "baseUrl": "http://host.docker.internal:11434"
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
+      "typeVersion": 1,
+      "position": [
+        84928,
+        22624
+      ],
+      "id": "f3fd5d69-66de-4777-ab0d-205792204f99",
+      "name": "Ollama Chat Model",
+      "credentials": {
+        "ollamaApi": {
+          "id": "OLLAMA_LOCAL_01",
+          "name": "Ollama account"
+        }
+      }
     }
   ],
   "pinData": {
@@ -1799,7 +2064,7 @@
       "main": [
         [
           {
-            "node": "hr-offer-details",
+            "node": "hr-offer-details-ai",
             "type": "main",
             "index": 0
           }
@@ -1821,7 +2086,7 @@
       "main": [
         [
           {
-            "node": "tlm-sql-finalize-run",
+            "node": "tlm-sql-final-policy",
             "type": "main",
             "index": 0
           }
@@ -1829,6 +2094,50 @@
         [
           {
             "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tlm-sql-final-policy": {
+      "main": [
+        [
+          {
+            "node": "tlm-sql-final-policy-metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tlm-sql-final-policy-metrics": {
+      "main": [
+        [
+          {
+            "node": "tlm-sql-build-summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tlm-sql-build-summary": {
+      "main": [
+        [
+          {
+            "node": "tlm-build-summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tlm-build-summary": {
+      "main": [
+        [
+          {
+            "node": "tlm-sql-finalize-run",
             "type": "main",
             "index": 0
           }
@@ -1870,18 +2179,7 @@
     },
     "Anthropic Chat Model": {
       "ai_languageModel": [
-        [
-          {
-            "node": "AI Agent",
-            "type": "ai_languageModel",
-            "index": 0
-          },
-          {
-            "node": "AI Agent - Single Offer Re-evaluate",
-            "type": "ai_languageModel",
-            "index": 0
-          }
-        ]
+        []
       ]
     },
     "st-apartment": {
@@ -1973,6 +2271,22 @@
             "node": "merge-offers",
             "type": "main",
             "index": 1
+          },
+          {
+            "node": "tlm-no-parse-list-events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tlm-no-parse-list-events": {
+      "main": [
+        [
+          {
+            "node": "tlm-sql-insert-event",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -2036,6 +2350,22 @@
       "main": [
         [
           {
+            "node": "js-validate-offer-before-sql",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "tlm-validate-events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "js-merge-with-desc-ai": {
+      "main": [
+        [
+          {
             "node": "Loop Over Items",
             "type": "main",
             "index": 0
@@ -2061,6 +2391,22 @@
             "node": "merge-offers",
             "type": "main",
             "index": 2
+          },
+          {
+            "node": "tlm-od-parse-list-events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tlm-od-parse-list-events": {
+      "main": [
+        [
+          {
+            "node": "tlm-sql-insert-event",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -2070,6 +2416,27 @@
         [
           {
             "node": "js-merge-with-desc",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "tlm-fetch-detail-events",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "tlm-merge-detail-events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "hr-offer-details-ai": {
+      "main": [
+        [
+          {
+            "node": "js-merge-with-desc-ai",
             "type": "main",
             "index": 0
           }
@@ -2129,12 +2496,77 @@
       "main": [
         [
           {
-            "node": "js-validate-offer-before-sql",
+            "node": "hr-offer-details",
             "type": "main",
             "index": 0
           },
           {
-            "node": "tlm-validate-events",
+            "node": "tlm-parse-list-summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tlm-parse-list-summary": {
+      "main": [
+        [
+          {
+            "node": "tlm-sql-upsert-stage-metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tlm-fetch-detail-events": {
+      "main": [
+        [
+          {
+            "node": "tlm-sql-insert-event",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "tlm-fetch-detail-summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tlm-fetch-detail-summary": {
+      "main": [
+        [
+          {
+            "node": "tlm-sql-upsert-stage-metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tlm-merge-detail-events": {
+      "main": [
+        [
+          {
+            "node": "tlm-sql-insert-event",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "tlm-merge-detail-summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tlm-merge-detail-summary": {
+      "main": [
+        [
+          {
+            "node": "tlm-sql-upsert-stage-metrics",
             "type": "main",
             "index": 0
           }
@@ -2191,6 +2623,17 @@
       ]
     },
     "js-aia-output-parser": {
+      "main": [
+        [
+          {
+            "node": "js-aia-require-complete-output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "js-aia-require-complete-output": {
       "main": [
         [
           {
@@ -2337,6 +2780,17 @@
       "main": [
         [
           {
+            "node": "js-single-offer-aia-require-complete-output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "js-single-offer-aia-require-complete-output": {
+      "main": [
+        [
+          {
             "node": "sql-single-offer-aia-update-offer",
             "type": "main",
             "index": 0
@@ -2435,6 +2889,22 @@
           {
             "node": "tlm-sql-upsert-stage-metrics",
             "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "AI Agent - Single Offer Re-evaluate",
+            "type": "ai_languageModel",
             "index": 0
           }
         ]

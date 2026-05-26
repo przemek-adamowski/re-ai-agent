@@ -13,7 +13,7 @@ services:
     ports:
       - "5433:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -35,6 +35,8 @@ services:
       - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
       - N8N_BLOCK_SVG_INTERPOLATION=false
       - NODE_FUNCTION_ALLOW_BUILTIN=crypto
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-mistral-nemo:12b-instruct-2407-q8_0}
     volumes:
       - ./.n8n:/home/node/.n8n
     depends_on:
@@ -57,7 +59,7 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:3001/api/categories', timeout=3)\""]
+      test: [ "CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:3001/api/categories', timeout=3)\"" ]
       interval: 15s
       timeout: 5s
       retries: 10

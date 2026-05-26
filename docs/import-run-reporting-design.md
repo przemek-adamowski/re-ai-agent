@@ -902,15 +902,15 @@ These apply to every phase:
 
 ---
 
-## Implementation Status (as of 2026-05-19)
+## Implementation Status (as of 2026-05-26)
 
 ### Checklist (phase-level)
 
 - [x] Phase 1.0 — Schema + Run Identity
 - [x] Phase 1.1 — Instrument `validate_before_sql`
 - [x] Phase 1.2 — Pre-Existence Check + `upsert_offer` Events
-- [ ] Phase 1.3 — Instrument `parse_list`, `fetch_detail`, `merge_detail`
-- [ ] Phase 1.4 — `final_policy_state` + Summary Freeze
+- [x] Phase 1.3 — Instrument `parse_list`, `fetch_detail`, `merge_detail`
+- [x] Phase 1.4 — `final_policy_state` + Summary Freeze
 - [ ] Phase 2 — Backend + Frontend
 - [ ] Phase 3 — Backfill Workflow Instrumentation
 
@@ -956,13 +956,39 @@ Two-output validator, per-offer event rows, stage metrics row.
 | Upsert telemetry wiring                  | ✅ Done      | `tlm-emit-upsert-events` wired to `tlm-sql-insert-event` and stage metrics upsert |
 | `sql-add-offer` SQL                      | ✅ Unchanged | Upsert query kept as-is per locked decision                                       |
 
-### Phase 1.3 — Instrument `parse_list`, `fetch_detail`, `merge_detail` ⬜ NOT STARTED
+### Phase 1.3 — Instrument `parse_list`, `fetch_detail`, `merge_detail` ✅ DONE
 
-Full funnel closure.
+Full scheduled-run funnel closure shipped in workflow version `1.5.2`.
 
-### Phase 1.4 — `final_policy_state` + Summary Freeze ⬜ NOT STARTED
+| Item                        | Status | Notes                                                                                                            |
+| --------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------- |
+| `parse_list` stage metrics  | ✅ Done | Writes aggregated counts with `metadata.by_portal`                                                               |
+| `fetch_detail` stage events | ✅ Done | Emits per-offer `passed` / `dropped` events with mapped HTTP reasons                                             |
+| `merge_detail` stage events | ✅ Done | Emits per-offer `passed` / `dropped` events and stage metrics                                                    |
+| Parser telemetry wiring     | ✅ Done | `js-no-apartments` and `js-od-parser` use dedicated single-output telemetry helpers compatible with n8n `2.20.9` |
+| Funnel invariant validation | ✅ Done | Verified on run `2026-05-25T1344Z__GNQTQ5AUBP`: `5 -> 5 -> 5 -> 5 -> 5`, no drops, no errors                     |
 
-End-of-run aggregate; `rea_import_runs.summary` populated.
+Validation note: the acceptance path was confirmed on a live scheduled run with `metadata.by_portal = {"otodom": 5}`. The `no` portal branch was implemented in the same pattern, but was not exercised by that specific verification run.
+
+### Phase 1.4 — `final_policy_state` + Summary Freeze ✅ DONE
+
+End-of-run aggregate and summary freeze shipped in workflow version `1.6.0`.
+
+| Item                                         | Status | Notes                                                                                                              |
+| -------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------ |
+| `tlm-sql-final-policy`                       | ✅ Done | Persists `final_state` events for run-scoped upserted offers; SQL fixed with `RETURNING` in inserted CTE path      |
+| `tlm-sql-final-policy-metrics`               | ✅ Done | Writes stage 6 counters (`review_*`, `new_*`) into `rea_import_run_stage_metrics`                                  |
+| `tlm-sql-build-summary`                      | ✅ Done | Summary derived from persisted run events and final policy counts; includes fallback guard for `validated_for_sql` |
+| `tlm-build-summary` + `tlm-sql-finalize-run` | ✅ Done | Finalizes run with `status='completed'`, `finished_at`, and frozen `summary` JSONB                                 |
+| P1.4 verification SQL                        | ✅ Done | `sql/p1.4_run_verification.sql` confirms summary-to-metrics consistency on latest run                              |
+
+Validation evidence: run `2026-05-26T0715Z__9WQ6M1K5XQ6` (completed) passed full P1.4 SQL verification with matching pairs:
+
+- `summary_entered_workflow = 4` and `metrics_parse_list_out = 4`
+- `summary_validated_for_sql = 4` and `metrics_validate_out = 4`
+- `summary_inserted_new = 0` and `metrics_inserted_new = 0`
+- `summary_updated_existing = 4` and `metrics_updated_existing = 4`
+- `summary_new_to_review = 0` and `metrics_new_to_review = 0`
 
 ### Phase 2 — Backend + Frontend ⬜ NOT STARTED
 
