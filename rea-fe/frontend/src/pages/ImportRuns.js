@@ -272,7 +272,9 @@ export default function ImportRuns() {
             columns={runColumns}
             getRowId={(row) => row.run_id}
             autoHeight
-            hideFooter
+            pagination
+            initialState={{ pagination: { paginationModel: { page: 0, pageSize: 10 } } }}
+            pageSizeOptions={[10]}
             disableRowSelectionOnClick
             onRowClick={(params) => setSelectedRunId(params.row.run_id)}
             sx={{ cursor: 'pointer', '& .MuiDataGrid-row:hover': { backgroundColor: 'action.hover' } }}
