@@ -1822,10 +1822,10 @@
     },
     {
       "parameters": {
-        "jsCode": "const items = $input.all();\n\nif (items.length === 0) {\n  return [];\n}\n\nconst runId = items[0]?.json?.run_id;\nif (!runId || String(runId).trim() === '' || String(runId).toLowerCase() === 'undefined') {\n  return [];\n}\n\nreturn [{\n  json: {\n    run_id: runId,\n    stage_key: 'select_candidates',\n    stage_order: 1,\n    input_count: items.length,\n    output_count: items.length,\n    dropped_count: 0,\n    error_count: 0,\n    metadata: {},\n  },\n}];"
+        "jsCode": "const items = $input.all();\n\nif (items.length === 0) {\n  return [];\n}\n\nconst first = items[0]?.json || {};\nconst runId = String(first.run_id || '').trim();\nconst stageKey = String(first.stage_key || '').trim();\nconst stageOrder = Number(first.stage_order) || 0;\n\nif (!runId || runId.toLowerCase() === 'undefined') {\n  return [];\n}\nif (!stageKey) {\n  return [];\n}\n\nconst metadata = stageKey === 'update_offer_after_ai'\n  ? { updated: items.length }\n  : {};\n\nreturn [{\n  json: {\n    run_id: runId,\n    stage_key: stageKey,\n    stage_order: stageOrder,\n    input_count: items.length,\n    output_count: items.length,\n    dropped_count: 0,\n    error_count: 0,\n    metadata,\n  },\n}];"
       },
       "id": "tlm-backfill-select-candidates-summary-20260526",
-      "name": "tlm-backfill-select-candidates-summary",
+      "name": "tlm-backfill-stage-summary",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -1869,19 +1869,6 @@
       "typeVersion": 2,
       "position": [
         85408,
-        22624
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const items = $input.all();\n\nif (items.length === 0) {\n  return [];\n}\n\nconst runId = items[0]?.json?.run_id;\nif (!runId || String(runId).trim() === '' || String(runId).toLowerCase() === 'undefined') {\n  return [];\n}\n\nreturn [{\n  json: {\n    run_id: runId,\n    stage_key: 'update_offer_after_ai',\n    stage_order: 5,\n    input_count: items.length,\n    output_count: items.length,\n    dropped_count: 0,\n    error_count: 0,\n    metadata: {\n      updated: items.length,\n    },\n  },\n}];"
-      },
-      "id": "tlm-backfill-update-offer-summary-20260526",
-      "name": "tlm-backfill-update-offer-summary",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        85632,
         22624
       ]
     },
@@ -2215,14 +2202,14 @@
             "index": 0
           },
           {
-            "node": "tlm-backfill-select-candidates-summary",
+            "node": "tlm-backfill-stage-summary",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "tlm-backfill-select-candidates-summary": {
+    "tlm-backfill-stage-summary": {
       "main": [
         [
           {
@@ -2610,18 +2597,7 @@
             "index": 0
           },
           {
-            "node": "tlm-backfill-update-offer-summary",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "tlm-backfill-update-offer-summary": {
-      "main": [
-        [
-          {
-            "node": "tlm-sql-upsert-stage-metrics",
+            "node": "tlm-backfill-stage-summary",
             "type": "main",
             "index": 0
           }
