@@ -700,27 +700,14 @@
     },
     {
       "parameters": {
-        "jsCode": "const items = $input.all();\nconst stageKey = 'parse_list';\nconst stageOrder = 1;\nreturn items.filter((item) => item.json?.external_id && item.json?.url).map((item) => ({ json: { run_id: item.json.run_id, stage_key: stageKey, stage_order: stageOrder, external_id: item.json.external_id, url: item.json.url, event_type: 'entered', event_reason: null, payload: { portal_source: 'otodom' } } }));"
+        "jsCode": "const items = $input.all();\n\nconst normalizePortal = (value) => {\n  const portal = String(value || '').trim().toLowerCase();\n  if (portal === 'nieruchomości online' || portal === 'nieruchomosci online' || portal === 'no') return 'no';\n  if (portal === 'otodom') return 'otodom';\n  return portal || 'unknown';\n};\n\nreturn items\n  .filter((item) => item.json?.external_id && item.json?.url)\n  .map((item) => ({\n    json: {\n      run_id: item.json.run_id,\n      stage_key: 'parse_list',\n      stage_order: 1,\n      external_id: item.json.external_id,\n      url: item.json.url,\n      event_type: 'entered',\n      event_reason: null,\n      payload: {\n        portal_source: normalizePortal(item.json.portal_source || item.json.property_portal),\n      },\n    },\n  }));"
       },
-      "id": "a99d9550-8215-460d-9fe8-8cac6ca45360",
-      "name": "tlm-od-parse-list-events",
+      "id": "tlm-parse-list-events-20260731",
+      "name": "tlm-parse-list-events",
       "type": "n8n-nodes-base.code",
       "position": [
         82352,
-        22496
-      ],
-      "typeVersion": 2
-    },
-    {
-      "parameters": {
-        "jsCode": "const items = $input.all();\nconst stageKey = 'parse_list';\nconst stageOrder = 1;\nreturn items.filter((item) => item.json?.external_id && item.json?.url).map((item) => ({ json: { run_id: item.json.run_id, stage_key: stageKey, stage_order: stageOrder, external_id: item.json.external_id, url: item.json.url, event_type: 'entered', event_reason: null, payload: { portal_source: 'no' } } }));"
-      },
-      "id": "9325e6ff-f036-43c9-a559-075cf1ea5d58",
-      "name": "tlm-no-parse-list-events",
-      "type": "n8n-nodes-base.code",
-      "position": [
-        82352,
-        22240
+        22368
       ],
       "typeVersion": 2
     },
@@ -904,7 +891,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const items = $input.all();\nif (items.length === 0) return [];\nconst runId = items[0]?.json?.run_id;\nif (!runId || String(runId).trim() === '' || String(runId).toLowerCase() === 'undefined') return [];\nconst byPortal = {};\nfor (const item of items) { const portal = String(item.json.portal_source || item.json.property_portal || 'unknown').trim().toLowerCase(); const normalizedPortal = portal === 'nieruchomości online' || portal === 'nieruchomosci online' || portal === 'no' ? 'no' : portal === 'otodom' ? 'otodom' : portal; byPortal[normalizedPortal] = (byPortal[normalizedPortal] || 0) + 1; }\nreturn [{ json: { run_id: runId, stage_key: 'parse_list', stage_order: 1, input_count: items.length, output_count: items.length, dropped_count: 0, error_count: 0, metadata: { by_portal: byPortal } } }];"
+        "jsCode": "const items = $input.all();\nif (items.length === 0) return [];\nconst runId = items[0]?.json?.run_id;\nif (!runId || String(runId).trim() === '' || String(runId).toLowerCase() === 'undefined') return [];\nconst byPortal = {};\nfor (const item of items) { const portal = String(item.json?.payload?.portal_source || item.json.portal_source || item.json.property_portal || 'unknown').trim().toLowerCase(); const normalizedPortal = portal === 'nieruchomości online' || portal === 'nieruchomosci online' || portal === 'no' ? 'no' : portal === 'otodom' ? 'otodom' : portal; byPortal[normalizedPortal] = (byPortal[normalizedPortal] || 0) + 1; }\nreturn [{ json: { run_id: runId, stage_key: 'parse_list', stage_order: 1, input_count: items.length, output_count: items.length, dropped_count: 0, error_count: 0, metadata: { by_portal: byPortal } } }];"
       },
       "id": "tlm-parse-list-summary-1748160800000",
       "name": "tlm-parse-list-summary",
@@ -2179,22 +2166,6 @@
             "node": "merge-offers",
             "type": "main",
             "index": 1
-          },
-          {
-            "node": "tlm-no-parse-list-events",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "tlm-no-parse-list-events": {
-      "main": [
-        [
-          {
-            "node": "tlm-sql-insert-event",
-            "type": "main",
-            "index": 0
           }
         ]
       ]
@@ -2353,20 +2324,20 @@
             "node": "merge-offers",
             "type": "main",
             "index": 2
-          },
-          {
-            "node": "tlm-od-parse-list-events",
-            "type": "main",
-            "index": 0
           }
         ]
       ]
     },
-    "tlm-od-parse-list-events": {
+    "tlm-parse-list-events": {
       "main": [
         [
           {
             "node": "tlm-sql-insert-event",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "tlm-parse-list-summary",
             "type": "main",
             "index": 0
           }
@@ -2463,7 +2434,7 @@
             "index": 0
           },
           {
-            "node": "tlm-parse-list-summary",
+            "node": "tlm-parse-list-events",
             "type": "main",
             "index": 0
           }
