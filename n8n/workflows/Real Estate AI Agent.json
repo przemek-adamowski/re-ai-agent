@@ -606,7 +606,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const allHtmlInputs = $input.all();\nconst allOffersFromSql = $(\"tlm-backfill-attach-run-id\").all();\n\nfunction decodeHtmlEntities(text) {\n  return String(text || '')\n    .replace(/&nbsp;/gi, ' ')\n    .replace(/&amp;/gi, '&')\n    .replace(/&quot;/gi, '\"')\n    .replace(/&#39;|&apos;/gi, \"'\")\n    .replace(/&lt;/gi, '<')\n    .replace(/&gt;/gi, '>');\n}\n\nfunction htmlToAiText(html) {\n  const source = String(html || '');\n  if (!source) return '';\n\n  let text = source\n    .replace(/<script\\b[^>]*>[\\s\\S]*?<\\/script>/gi, ' ')\n    .replace(/<style\\b[^>]*>[\\s\\S]*?<\\/style>/gi, ' ')\n    .replace(/<noscript\\b[^>]*>[\\s\\S]*?<\\/noscript>/gi, ' ')\n    .replace(/<svg\\b[^>]*>[\\s\\S]*?<\\/svg>/gi, ' ')\n    .replace(/<\\/(p|div|li|h1|h2|h3|h4|h5|h6|tr|section|article|br)>/gi, '\\n')\n    .replace(/<[^>]+>/g, ' ');\n\n  text = decodeHtmlEntities(text)\n    .replace(/\\r/g, '\\n')\n    .replace(/\\n{3,}/g, '\\n\\n')\n    .replace(/[ \\t]{2,}/g, ' ')\n    .trim();\n\n  const MAX_CHARS = 24000;\n  if (text.length > MAX_CHARS) {\n    text = text.slice(0, MAX_CHARS) + '\\n\\n[TRUNCATED_FOR_TOKEN_LIMIT]';\n  }\n\n  return text;\n}\n\nreturn allHtmlInputs.map((htmlItem, index) => ({\n  json: {\n    ...(allOffersFromSql[index] ? allOffersFromSql[index].json : {}),\n    raw_md: htmlToAiText(htmlItem.json.data || 'No content'),\n    ai_input_md: htmlToAiText(htmlItem.json.data || 'No content')\n  }\n}));"
+        "jsCode": "const allHtmlInputs = $input.all();\nconst allOffersFromSql = $(\"sql-backfill-ai\").all();\n\nfunction decodeHtmlEntities(text) {\n  return String(text || '')\n    .replace(/&nbsp;/gi, ' ')\n    .replace(/&amp;/gi, '&')\n    .replace(/&quot;/gi, '\"')\n    .replace(/&#39;|&apos;/gi, \"'\")\n    .replace(/&lt;/gi, '<')\n    .replace(/&gt;/gi, '>');\n}\n\nfunction htmlToAiText(html) {\n  const source = String(html || '');\n  if (!source) return '';\n\n  let text = source\n    .replace(/<script\\b[^>]*>[\\s\\S]*?<\\/script>/gi, ' ')\n    .replace(/<style\\b[^>]*>[\\s\\S]*?<\\/style>/gi, ' ')\n    .replace(/<noscript\\b[^>]*>[\\s\\S]*?<\\/noscript>/gi, ' ')\n    .replace(/<svg\\b[^>]*>[\\s\\S]*?<\\/svg>/gi, ' ')\n    .replace(/<\\/(p|div|li|h1|h2|h3|h4|h5|h6|tr|section|article|br)>/gi, '\\n')\n    .replace(/<[^>]+>/g, ' ');\n\n  text = decodeHtmlEntities(text)\n    .replace(/\\r/g, '\\n')\n    .replace(/\\n{3,}/g, '\\n\\n')\n    .replace(/[ \\t]{2,}/g, ' ')\n    .trim();\n\n  const MAX_CHARS = 24000;\n  if (text.length > MAX_CHARS) {\n    text = text.slice(0, MAX_CHARS) + '\\n\\n[TRUNCATED_FOR_TOKEN_LIMIT]';\n  }\n\n  return text;\n}\n\nreturn allHtmlInputs.map((htmlItem, index) => ({\n  json: {\n    ...(allOffersFromSql[index] ? allOffersFromSql[index].json : {}),\n    raw_md: htmlToAiText(htmlItem.json.data || 'No content'),\n    ai_input_md: htmlToAiText(htmlItem.json.data || 'No content')\n  }\n}));"
       },
       "id": "7a8961be-4c34-44e6-9347-10a934f9c674",
       "name": "js-backfill-merge-with-desc",
@@ -1809,19 +1809,6 @@
     },
     {
       "parameters": {
-        "jsCode": "const items = $input.all();\nconst insertedRun = $('tlm-sql-insert-run').all();\nconst fallbackRunId = String(insertedRun[0]?.json?.run_id || '').trim();\n\nreturn items.map((item) => {\n  const currentRunId = String(item.json?.run_id || '').trim();\n\n  return {\n    ...item,\n    json: {\n      ...item.json,\n      run_id: currentRunId || fallbackRunId,\n    },\n  };\n});"
-      },
-      "id": "tlm-backfill-attach-run-id-20260526",
-      "name": "tlm-backfill-attach-run-id",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        83248,
-        22304
-      ]
-    },
-    {
-      "parameters": {
         "jsCode": "const items = $input.all();\n\nif (items.length === 0) {\n  return [];\n}\n\nreturn items.map((item) => ({\n  json: {\n    run_id: item.json.run_id,\n    stage_key: 'select_candidates',\n    stage_order: 1,\n    external_id: String(item.json.external_id || '').trim() || null,\n    url: item.json.url || null,\n    event_type: 'entered',\n    event_reason: null,\n    payload: {},\n  },\n}));"
       },
       "id": "tlm-backfill-select-candidates-events-20260526",
@@ -2196,28 +2183,6 @@
       "main": [
         [
           {
-            "node": "tlm-backfill-attach-run-id",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "tlm-init-run-backfill": {
-      "main": [
-        [
-          {
-            "node": "tlm-sql-insert-run",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "tlm-backfill-attach-run-id": {
-      "main": [
-        [
-          {
             "node": "hr-backfill",
             "type": "main",
             "index": 0
@@ -2229,6 +2194,17 @@
           },
           {
             "node": "tlm-backfill-select-candidates-summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tlm-init-run-backfill": {
+      "main": [
+        [
+          {
+            "node": "tlm-sql-insert-run",
             "type": "main",
             "index": 0
           }
