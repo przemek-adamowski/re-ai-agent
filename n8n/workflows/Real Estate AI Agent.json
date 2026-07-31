@@ -2191,11 +2191,6 @@
             "node": "tlm-backfill-select-candidates-events",
             "type": "main",
             "index": 0
-          },
-          {
-            "node": "tlm-backfill-select-candidates-summary",
-            "type": "main",
-            "index": 0
           }
         ]
       ]
@@ -2216,6 +2211,11 @@
         [
           {
             "node": "tlm-sql-insert-event",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "tlm-backfill-select-candidates-summary",
             "type": "main",
             "index": 0
           }
