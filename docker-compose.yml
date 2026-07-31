@@ -19,6 +19,21 @@ services:
       retries: 10
       start_period: 10s
 
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama-app
+    restart: always
+    ports:
+      - "11434:11434"
+    volumes:
+      - ./.ollama:/root/.ollama
+    healthcheck:
+      test: [ "CMD", "ollama", "list" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
   n8n:
     image: n8nio/n8n
     container_name: n8n-app
@@ -35,12 +50,14 @@ services:
       - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
       - N8N_BLOCK_SVG_INTERPOLATION=false
       - NODE_FUNCTION_ALLOW_BUILTIN=crypto
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
       - OLLAMA_MODEL=${OLLAMA_MODEL:-mistral-nemo:12b-instruct-2407-q8_0}
     volumes:
       - ./.n8n:/home/node/.n8n
     depends_on:
       postgres:
+        condition: service_healthy
+      ollama:
         condition: service_healthy
 
   rea-api:

@@ -232,7 +232,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "UPDATE rea_import_runs\nSET status = 'completed',\n    finished_at = NOW(),\n    summary = '{{ (() => { const summary = $json.summary ?? {}; return JSON.stringify(summary).replace(/'/g, \"''\"); })() }}'::jsonb\nWHERE run_id = '{{ String($json.run_id || $(\"tlm-init-run\").first().json.run_id || '').replace(/'/g, \"''\") }}'\n  AND status = 'running'\nRETURNING run_id, status, finished_at, summary;",
+        "query": "UPDATE rea_import_runs\nSET status = 'completed',\n    finished_at = NOW(),\n    summary = '{{ (() => { const summary = $json.summary ?? {}; return JSON.stringify(summary).replace(/'/g, \"''\"); })() }}'::jsonb\nWHERE run_id = '{{ String($json.run_id || '').replace(/'/g, \"''\") }}'\n  AND status = 'running'\nRETURNING run_id, status, finished_at, summary;",
         "options": {
           "queryReplacement": "="
         }
@@ -255,7 +255,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH deleted AS (\n    DELETE FROM rea_import_run_offer_events\n    WHERE run_id = '{{ $(\"tlm-init-run\").first().json.run_id }}'\n      AND stage_key = 'final_policy_state'\n), inserted AS (\n    INSERT INTO rea_import_run_offer_events (\n        run_id,\n        stage_key,\n        stage_order,\n        external_id,\n        url,\n        event_type,\n        event_reason,\n        is_new_offer,\n        review_status,\n        payload\n    )\n    SELECT\n        '{{ $(\"tlm-init-run\").first().json.run_id }}'::text AS run_id,\n        'final_policy_state'::text AS stage_key,\n        6 AS stage_order,\n        o.external_id,\n        o.url,\n        'final_state'::text AS event_type,\n        COALESCE(o.review_status, 'not_needed')::text AS event_reason,\n        COALESCE((e.payload->>'is_new_offer')::boolean, FALSE) AS is_new_offer,\n        COALESCE(o.review_status, 'not_needed')::text AS review_status,\n        jsonb_build_object(\n            'ai_rating', o.ai_rating,\n            'is_in_trash', o.is_in_trash\n        ) AS payload\n    FROM rea_property_offers o\n    JOIN rea_import_run_offer_events e\n      ON e.external_id = o.external_id\n     AND e.run_id = '{{ $(\"tlm-init-run\").first().json.run_id }}'\n     AND e.stage_key = 'upsert_offer'\n    RETURNING 1\n)\nSELECT '{{ $(\"tlm-init-run\").first().json.run_id }}'::text AS run_id, COUNT(*)::int AS final_state_count\nFROM inserted;",
+        "query": "WITH run_context AS (\n    SELECT '{{ String($json.run_id || '').replace(/'/g, \"''\") }}'::text AS run_id\n), valid_run AS (\n    SELECT run_id\n    FROM run_context\n    WHERE NULLIF(BTRIM(run_id), '') IS NOT NULL\n      AND LOWER(BTRIM(run_id)) <> 'undefined'\n), deleted AS (\n    DELETE FROM rea_import_run_offer_events\n    WHERE run_id = (SELECT run_id FROM valid_run)\n      AND stage_key = 'final_policy_state'\n), inserted AS (\n    INSERT INTO rea_import_run_offer_events (\n        run_id,\n        stage_key,\n        stage_order,\n        external_id,\n        url,\n        event_type,\n        event_reason,\n        is_new_offer,\n        review_status,\n        payload\n    )\n    SELECT\n        vr.run_id,\n        'final_policy_state'::text AS stage_key,\n        6 AS stage_order,\n        o.external_id,\n        o.url,\n        'final_state'::text AS event_type,\n        COALESCE(o.review_status, 'not_needed')::text AS event_reason,\n        COALESCE((e.payload->>'is_new_offer')::boolean, FALSE) AS is_new_offer,\n        COALESCE(o.review_status, 'not_needed')::text AS review_status,\n        jsonb_build_object(\n            'ai_rating', o.ai_rating,\n            'is_in_trash', o.is_in_trash\n        ) AS payload\n    FROM rea_property_offers o\n    JOIN rea_import_run_offer_events e\n      ON e.external_id = o.external_id\n     AND e.run_id = (SELECT run_id FROM valid_run)\n     AND e.stage_key IN ('upsert_offer', 'update_offer_after_ai')\n    CROSS JOIN valid_run vr\n    RETURNING 1\n)\nSELECT vr.run_id AS run_id, COUNT(inserted.*)::int AS final_state_count\nFROM valid_run vr\nLEFT JOIN inserted ON TRUE\nGROUP BY vr.run_id;",
         "options": {
           "queryReplacement": "="
         }
@@ -278,7 +278,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH agg AS (\n    SELECT\n        '{{ $(\"tlm-init-run\").first().json.run_id }}'::text AS run_id,\n        COUNT(*)::int AS total_count,\n        COUNT(*) FILTER (WHERE review_status = 'pending')::int AS review_pending,\n        COUNT(*) FILTER (WHERE review_status = 'not_needed')::int AS review_not_needed,\n        COUNT(*) FILTER (WHERE review_status = 'blocked')::int AS review_blocked,\n        COUNT(*) FILTER (WHERE review_status = 'trashed')::int AS review_trashed,\n        COUNT(*) FILTER (WHERE COALESCE(is_new_offer, FALSE) = TRUE AND review_status = 'pending')::int AS new_pending_review,\n        COUNT(*) FILTER (WHERE COALESCE(is_new_offer, FALSE) = TRUE AND review_status = 'not_needed')::int AS new_active_no_review,\n        COUNT(*) FILTER (WHERE COALESCE(is_new_offer, FALSE) = TRUE AND review_status = 'blocked')::int AS new_blocked,\n        COUNT(*) FILTER (WHERE COALESCE(is_new_offer, FALSE) = TRUE AND review_status = 'trashed')::int AS new_trashed\n    FROM rea_import_run_offer_events\n    WHERE run_id = '{{ $(\"tlm-init-run\").first().json.run_id }}'\n      AND stage_key = 'final_policy_state'\n)\nINSERT INTO rea_import_run_stage_metrics (\n    run_id,\n    stage_key,\n    stage_order,\n    input_count,\n    output_count,\n    dropped_count,\n    error_count,\n    metadata\n)\nSELECT\n    run_id,\n    'final_policy_state'::text AS stage_key,\n    6 AS stage_order,\n    total_count AS input_count,\n    total_count AS output_count,\n    0 AS dropped_count,\n    0 AS error_count,\n    jsonb_build_object(\n        'review_pending', review_pending,\n        'review_not_needed', review_not_needed,\n        'review_blocked', review_blocked,\n        'review_trashed', review_trashed,\n        'new_pending_review', new_pending_review,\n        'new_active_no_review', new_active_no_review,\n        'new_blocked', new_blocked,\n        'new_trashed', new_trashed\n    ) AS metadata\nFROM agg\nON CONFLICT (run_id, stage_key) DO UPDATE SET\n    input_count = EXCLUDED.input_count,\n    output_count = EXCLUDED.output_count,\n    dropped_count = EXCLUDED.dropped_count,\n    error_count = EXCLUDED.error_count,\n    metadata = EXCLUDED.metadata\nRETURNING run_id, stage_key, stage_order, input_count, output_count, dropped_count, error_count, metadata;",
+        "query": "WITH run_context AS (\n    SELECT '{{ String($json.run_id || '').replace(/'/g, \"''\") }}'::text AS run_id\n), valid_run AS (\n    SELECT run_id\n    FROM run_context\n    WHERE NULLIF(BTRIM(run_id), '') IS NOT NULL\n      AND LOWER(BTRIM(run_id)) <> 'undefined'\n), agg AS (\n    SELECT\n        vr.run_id AS run_id,\n        COUNT(*)::int AS total_count,\n        COUNT(*) FILTER (WHERE review_status = 'pending')::int AS review_pending,\n        COUNT(*) FILTER (WHERE review_status = 'not_needed')::int AS review_not_needed,\n        COUNT(*) FILTER (WHERE review_status = 'blocked')::int AS review_blocked,\n        COUNT(*) FILTER (WHERE review_status = 'trashed')::int AS review_trashed,\n        COUNT(*) FILTER (WHERE COALESCE(is_new_offer, FALSE) = TRUE AND review_status = 'pending')::int AS new_pending_review,\n        COUNT(*) FILTER (WHERE COALESCE(is_new_offer, FALSE) = TRUE AND review_status = 'not_needed')::int AS new_active_no_review,\n        COUNT(*) FILTER (WHERE COALESCE(is_new_offer, FALSE) = TRUE AND review_status = 'blocked')::int AS new_blocked,\n        COUNT(*) FILTER (WHERE COALESCE(is_new_offer, FALSE) = TRUE AND review_status = 'trashed')::int AS new_trashed\n    FROM valid_run vr\n    LEFT JOIN rea_import_run_offer_events e\n      ON e.run_id = vr.run_id\n     AND e.stage_key = 'final_policy_state'\n    GROUP BY vr.run_id\n)\nINSERT INTO rea_import_run_stage_metrics (\n    run_id,\n    stage_key,\n    stage_order,\n    input_count,\n    output_count,\n    dropped_count,\n    error_count,\n    metadata\n)\nSELECT\n    run_id,\n    'final_policy_state'::text AS stage_key,\n    6 AS stage_order,\n    total_count AS input_count,\n    total_count AS output_count,\n    0 AS dropped_count,\n    0 AS error_count,\n    jsonb_build_object(\n        'review_pending', review_pending,\n        'review_not_needed', review_not_needed,\n        'review_blocked', review_blocked,\n        'review_trashed', review_trashed,\n        'new_pending_review', new_pending_review,\n        'new_active_no_review', new_active_no_review,\n        'new_blocked', new_blocked,\n        'new_trashed', new_trashed\n    ) AS metadata\nFROM agg\nON CONFLICT (run_id, stage_key) DO UPDATE SET\n    input_count = EXCLUDED.input_count,\n    output_count = EXCLUDED.output_count,\n    dropped_count = EXCLUDED.dropped_count,\n    error_count = EXCLUDED.error_count,\n    metadata = EXCLUDED.metadata\nRETURNING run_id, stage_key, stage_order, input_count, output_count, dropped_count, error_count, metadata;",
         "options": {
           "queryReplacement": "="
         }
@@ -301,7 +301,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH events AS (\n    SELECT stage_key, event_type, COALESCE(event_reason, 'ok') AS event_reason, is_new_offer\n    FROM rea_import_run_offer_events\n    WHERE run_id = '{{ $(\"tlm-init-run\").first().json.run_id }}'\n), stage_metrics AS (\n    SELECT stage_key, metadata\n    FROM rea_import_run_stage_metrics\n    WHERE run_id = '{{ $(\"tlm-init-run\").first().json.run_id }}'\n), counts AS (\n    SELECT\n        COALESCE((SELECT COUNT(*) FROM events WHERE stage_key = 'parse_list' AND event_type = 'entered'), 0) AS entered_workflow,\n        GREATEST(\n            COALESCE((SELECT COUNT(*) FROM events WHERE stage_key = 'validate_before_sql' AND event_type = 'passed'), 0),\n            COALESCE((SELECT COUNT(*) FROM events WHERE stage_key = 'upsert_offer' AND event_type IN ('inserted', 'updated')), 0)\n        ) AS validated_for_sql\n), summary AS (\n    SELECT\n        '{{ $(\"tlm-init-run\").first().json.run_id }}'::text AS run_id,\n        jsonb_build_object(\n            'entered_workflow', entered_workflow,\n            'validated_for_sql', validated_for_sql,\n            'dropped_before_sql', GREATEST(entered_workflow - validated_for_sql, 0),\n            'drops_by_reason', COALESCE((\n                SELECT jsonb_object_agg(reason, total_count)\n                FROM (\n                    SELECT event_reason AS reason, COUNT(*)::int AS total_count\n                    FROM events\n                    WHERE stage_key IN ('fetch_detail', 'merge_detail', 'validate_before_sql')\n                      AND event_type = 'dropped'\n                    GROUP BY event_reason\n                ) aggregated\n            ), '{}'::jsonb),\n            'inserted_new', COALESCE((SELECT COUNT(*) FROM events WHERE stage_key = 'upsert_offer' AND event_type = 'inserted'), 0),\n            'updated_existing', COALESCE((SELECT COUNT(*) FROM events WHERE stage_key = 'upsert_offer' AND event_type = 'updated'), 0),\n            'new_to_review', COALESCE((SELECT COUNT(*) FROM events WHERE stage_key = 'final_policy_state' AND event_type = 'final_state' AND COALESCE(is_new_offer, FALSE) = TRUE AND event_reason = 'pending'), 0),\n            'new_not_needed', COALESCE((SELECT COUNT(*) FROM events WHERE stage_key = 'final_policy_state' AND event_type = 'final_state' AND COALESCE(is_new_offer, FALSE) = TRUE AND event_reason = 'not_needed'), 0),\n            'new_blocked', COALESCE((SELECT COUNT(*) FROM events WHERE stage_key = 'final_policy_state' AND event_type = 'final_state' AND COALESCE(is_new_offer, FALSE) = TRUE AND event_reason = 'blocked'), 0),\n            'new_trashed', COALESCE((SELECT COUNT(*) FROM events WHERE stage_key = 'final_policy_state' AND event_type = 'final_state' AND COALESCE(is_new_offer, FALSE) = TRUE AND event_reason = 'trashed'), 0),\n            'ai_rated', 0,\n            'ai_parse_failed', 0\n        ) AS summary\n    FROM counts\n)\nSELECT run_id, summary\nFROM summary;",
+        "query": "WITH run_context AS (\n    SELECT '{{ String($json.run_id || '').replace(/'/g, \"''\") }}'::text AS run_id\n), run_meta AS (\n    SELECT run_id, COALESCE(trigger_source, 'schedule') AS trigger_source\n    FROM rea_import_runs\n    WHERE run_id = (SELECT run_id FROM run_context)\n), events AS (\n    SELECT stage_key, event_type, COALESCE(event_reason, 'ok') AS event_reason, is_new_offer\n    FROM rea_import_run_offer_events\n    WHERE run_id = (SELECT run_id FROM run_context)\n), counts AS (\n    SELECT\n        CASE WHEN (SELECT trigger_source FROM run_meta) = 'backfill'\n            THEN COALESCE((SELECT COUNT(*) FROM events WHERE stage_key = 'select_candidates' AND event_type = 'entered'), 0)\n            ELSE COALESCE((SELECT COUNT(*) FROM events WHERE stage_key = 'parse_list' AND event_type = 'entered'), 0)\n        END AS entered_workflow,\n        CASE WHEN (SELECT trigger_source FROM run_meta) = 'backfill'\n            THEN COALESCE((SELECT COUNT(*) FROM events WHERE stage_key = 'update_offer_after_ai' AND event_type = 'updated'), 0)\n            ELSE GREATEST(\n                COALESCE((SELECT COUNT(*) FROM events WHERE stage_key = 'validate_before_sql' AND event_type = 'passed'), 0),\n                COALESCE((SELECT COUNT(*) FROM events WHERE stage_key = 'upsert_offer' AND event_type IN ('inserted', 'updated')), 0)\n            )\n        END AS validated_for_sql,\n        CASE WHEN (SELECT trigger_source FROM run_meta) = 'backfill'\n            THEN COALESCE((SELECT COUNT(*) FROM events WHERE stage_key = 'update_offer_after_ai' AND event_type = 'updated'), 0)\n            ELSE COALESCE((SELECT COUNT(*) FROM events WHERE stage_key = 'upsert_offer' AND event_type = 'updated'), 0)\n        END AS updated_existing,\n        COALESCE((SELECT COUNT(*) FROM events WHERE stage_key = 'ai_rate' AND event_type = 'rated'), 0) AS ai_rated,\n        COALESCE((SELECT COUNT(*) FROM events WHERE stage_key = 'ai_rate' AND event_type = 'failed'), 0) AS ai_parse_failed\n), summary AS (\n    SELECT\n        (SELECT run_id FROM run_context) AS run_id,\n        jsonb_build_object(\n            'entered_workflow', entered_workflow,\n            'validated_for_sql', validated_for_sql,\n            'dropped_before_sql', GREATEST(entered_workflow - validated_for_sql, 0),\n            'drops_by_reason', COALESCE((\n                SELECT jsonb_object_agg(reason, total_count)\n                FROM (\n                    SELECT event_reason AS reason, COUNT(*)::int AS total_count\n                    FROM events\n                    WHERE stage_key IN ('fetch_detail', 'merge_detail', 'validate_before_sql')\n                      AND event_type = 'dropped'\n                    GROUP BY event_reason\n                ) aggregated\n            ), '{}'::jsonb),\n            'inserted_new', COALESCE((SELECT COUNT(*) FROM events WHERE stage_key = 'upsert_offer' AND event_type = 'inserted'), 0),\n            'updated_existing', updated_existing,\n            'new_to_review', COALESCE((SELECT COUNT(*) FROM events WHERE stage_key = 'final_policy_state' AND event_type = 'final_state' AND COALESCE(is_new_offer, FALSE) = TRUE AND event_reason = 'pending'), 0),\n            'new_not_needed', COALESCE((SELECT COUNT(*) FROM events WHERE stage_key = 'final_policy_state' AND event_type = 'final_state' AND COALESCE(is_new_offer, FALSE) = TRUE AND event_reason = 'not_needed'), 0),\n            'new_blocked', COALESCE((SELECT COUNT(*) FROM events WHERE stage_key = 'final_policy_state' AND event_type = 'final_state' AND COALESCE(is_new_offer, FALSE) = TRUE AND event_reason = 'blocked'), 0),\n            'new_trashed', COALESCE((SELECT COUNT(*) FROM events WHERE stage_key = 'final_policy_state' AND event_type = 'final_state' AND COALESCE(is_new_offer, FALSE) = TRUE AND event_reason = 'trashed'), 0),\n            'ai_rated', ai_rated,\n            'ai_parse_failed', ai_parse_failed\n        ) AS summary\n    FROM counts\n)\nSELECT run_id, summary\nFROM summary;",
         "options": {
           "queryReplacement": "="
         }
@@ -420,7 +420,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const now = new Date();\nconst timestamp = now.toISOString().replace(/[:.]/g, '').slice(0, 15) + 'Z';\nconst random = Math.random().toString(36).slice(2, 14).toUpperCase();\n\nreturn [{\n  json: {\n    run_id: `${timestamp}__${random}`,\n    workflow_name: 'Real Estate AI Agent',\n    workflow_version: '1.6.0',\n    trigger_source: 'schedule',\n    started_at: now.toISOString(),\n  }\n}];"
+        "jsCode": "const now = new Date();\nconst timestamp = now.toISOString().replace(/[:.]/g, '').slice(0, 15) + 'Z';\nconst random = Math.random().toString(36).slice(2, 14).toUpperCase();\n\nreturn [{\n  json: {\n    run_id: `${timestamp}__${random}`,\n    workflow_name: 'Real Estate AI Agent',\n    workflow_version: '1.8.1',\n    trigger_source: 'schedule',\n    started_at: now.toISOString(),\n  }\n}];"
       },
       "id": "7558de9f-2df0-4946-96ec-e4dff74f6687",
       "name": "tlm-init-run",
@@ -538,7 +538,7 @@
     },
     {
       "parameters": {
-        "content": "## Real Estate AI Agent\n\n**Version:** `1.6.0`\n**Git SHA:** `75c39b5`\n**Built:** `2026-05-25`\n\nUpload check:\n- workflow name is `Real Estate AI Agent`\n- metadata node is `Workflow Metadata - v1.6.0`",
+        "content": "## Real Estate AI Agent\n\n**Version:** `1.8.1`\n**Git SHA:** `unknown`\n**Built:** `2026-07-22`\n\nUpload check:\n- workflow name is `Real Estate AI Agent`\n- metadata node is `Workflow Metadata - v1.8.1`",
         "height": 240,
         "width": 560,
         "color": 4
@@ -554,10 +554,10 @@
     },
     {
       "parameters": {
-        "jsCode": "return [{\n  json: {\n    \"workflow_name\": \"Real Estate AI Agent\",\n    \"workflow_version\": \"1.6.0\",\n    \"workflow_display_name\": \"Real Estate AI Agent\",\n    \"git_sha\": \"75c39b5\",\n    \"build_date\": \"2026-05-25\",\n    \"workflow_file\": \"n8n/workflows/Real Estate AI Agent.json\",\n    \"version_source\": \"n8n/workflows/Real Estate AI Agent.json\"\n  }\n}];"
+        "jsCode": "return [{\n  json: {\n    \"workflow_name\": \"Real Estate AI Agent\",\n    \"workflow_version\": \"1.8.1\",\n    \"workflow_display_name\": \"Real Estate AI Agent\",\n    \"git_sha\": \"unknown\",\n    \"build_date\": \"2026-07-22\",\n    \"workflow_file\": \"n8n/workflows/Real Estate AI Agent.json\",\n    \"version_source\": \"n8n/workflows/Real Estate AI Agent.json\"\n  }\n}];"
       },
       "id": "workflow-metadata-node",
-      "name": "Workflow Metadata - v1.6.0",
+      "name": "Workflow Metadata - v1.8.1",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -568,7 +568,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT * FROM rea_property_offers\nWHERE COALESCE(is_in_trash, FALSE) = FALSE\n  AND (\n    ai_rating IS NULL\n    OR ai_rating < 1\n    OR ai_rating > 10\n    OR COALESCE(NULLIF(ai_analysis_html, ''), '') = ''\n    OR NULLIF(BTRIM(COALESCE(title, '')), '') IS NULL\n    OR COALESCE(price, 0) <= 0\n    OR COALESCE(price_per_m2, 0) <= 0\n    OR COALESCE(area, 0) <= 0\n    OR COALESCE(construction_year, 0) <= 0\n  )\n  AND NULLIF(BTRIM(COALESCE(external_id, '')), '') IS NOT NULL\n  AND LOWER(BTRIM(COALESCE(external_id, ''))) <> 'undefined'\n  AND NULLIF(BTRIM(COALESCE(url, '')), '') IS NOT NULL\n  AND LOWER(BTRIM(COALESCE(url, ''))) <> 'undefined'\n  AND BTRIM(url) ~* '^https?://'\nORDER BY created_at ASC;",
+        "query": "SELECT\n  '{{ String($json.run_id || '').replace(/'/g, \"''\") }}'::text AS run_id,\n  rea_property_offers.*\nFROM rea_property_offers\nWHERE COALESCE(is_in_trash, FALSE) = FALSE\n  AND (\n    ai_rating IS NULL\n    OR ai_rating < 1\n    OR ai_rating > 10\n    OR COALESCE(NULLIF(ai_analysis_html, ''), '') = ''\n    OR NULLIF(BTRIM(COALESCE(title, '')), '') IS NULL\n    OR COALESCE(price, 0) <= 0\n    OR COALESCE(price_per_m2, 0) <= 0\n    OR COALESCE(area, 0) <= 0\n    OR COALESCE(construction_year, 0) <= 0\n  )\n  AND NULLIF(BTRIM(COALESCE(external_id, '')), '') IS NOT NULL\n  AND LOWER(BTRIM(COALESCE(external_id, ''))) <> 'undefined'\n  AND NULLIF(BTRIM(COALESCE(url, '')), '') IS NOT NULL\n  AND LOWER(BTRIM(COALESCE(url, ''))) <> 'undefined'\n  AND BTRIM(url) ~* '^https?://'\nORDER BY created_at ASC;",
         "options": {
           "queryReplacement": "="
         }
@@ -619,7 +619,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const allHtmlInputs = $input.all();\nconst allOffersFromSql = $(\"sql-backfill-ai\").all();\n\nfunction decodeHtmlEntities(text) {\n  return String(text || '')\n    .replace(/&nbsp;/gi, ' ')\n    .replace(/&amp;/gi, '&')\n    .replace(/&quot;/gi, '\"')\n    .replace(/&#39;|&apos;/gi, \"'\")\n    .replace(/&lt;/gi, '<')\n    .replace(/&gt;/gi, '>');\n}\n\nfunction htmlToAiText(html) {\n  const source = String(html || '');\n  if (!source) return '';\n\n  let text = source\n    .replace(/<script\\b[^>]*>[\\s\\S]*?<\\/script>/gi, ' ')\n    .replace(/<style\\b[^>]*>[\\s\\S]*?<\\/style>/gi, ' ')\n    .replace(/<noscript\\b[^>]*>[\\s\\S]*?<\\/noscript>/gi, ' ')\n    .replace(/<svg\\b[^>]*>[\\s\\S]*?<\\/svg>/gi, ' ')\n    .replace(/<\\/(p|div|li|h1|h2|h3|h4|h5|h6|tr|section|article|br)>/gi, '\\n')\n    .replace(/<[^>]+>/g, ' ');\n\n  text = decodeHtmlEntities(text)\n    .replace(/\\r/g, '\\n')\n    .replace(/\\n{3,}/g, '\\n\\n')\n    .replace(/[ \\t]{2,}/g, ' ')\n    .trim();\n\n  const MAX_CHARS = 24000;\n  if (text.length > MAX_CHARS) {\n    text = text.slice(0, MAX_CHARS) + '\\n\\n[TRUNCATED_FOR_TOKEN_LIMIT]';\n  }\n\n  return text;\n}\n\nreturn allHtmlInputs.map((htmlItem, index) => ({\n  json: {\n    ...(allOffersFromSql[index] ? allOffersFromSql[index].json : {}),\n    raw_md: htmlToAiText(htmlItem.json.data || 'No content'),\n    ai_input_md: htmlToAiText(htmlItem.json.data || 'No content')\n  }\n}));"
+        "jsCode": "const allHtmlInputs = $input.all();\nconst allOffersFromSql = $(\"tlm-backfill-attach-run-id\").all();\n\nfunction decodeHtmlEntities(text) {\n  return String(text || '')\n    .replace(/&nbsp;/gi, ' ')\n    .replace(/&amp;/gi, '&')\n    .replace(/&quot;/gi, '\"')\n    .replace(/&#39;|&apos;/gi, \"'\")\n    .replace(/&lt;/gi, '<')\n    .replace(/&gt;/gi, '>');\n}\n\nfunction htmlToAiText(html) {\n  const source = String(html || '');\n  if (!source) return '';\n\n  let text = source\n    .replace(/<script\\b[^>]*>[\\s\\S]*?<\\/script>/gi, ' ')\n    .replace(/<style\\b[^>]*>[\\s\\S]*?<\\/style>/gi, ' ')\n    .replace(/<noscript\\b[^>]*>[\\s\\S]*?<\\/noscript>/gi, ' ')\n    .replace(/<svg\\b[^>]*>[\\s\\S]*?<\\/svg>/gi, ' ')\n    .replace(/<\\/(p|div|li|h1|h2|h3|h4|h5|h6|tr|section|article|br)>/gi, '\\n')\n    .replace(/<[^>]+>/g, ' ');\n\n  text = decodeHtmlEntities(text)\n    .replace(/\\r/g, '\\n')\n    .replace(/\\n{3,}/g, '\\n\\n')\n    .replace(/[ \\t]{2,}/g, ' ')\n    .trim();\n\n  const MAX_CHARS = 24000;\n  if (text.length > MAX_CHARS) {\n    text = text.slice(0, MAX_CHARS) + '\\n\\n[TRUNCATED_FOR_TOKEN_LIMIT]';\n  }\n\n  return text;\n}\n\nreturn allHtmlInputs.map((htmlItem, index) => ({\n  json: {\n    ...(allOffersFromSql[index] ? allOffersFromSql[index].json : {}),\n    raw_md: htmlToAiText(htmlItem.json.data || 'No content'),\n    ai_input_md: htmlToAiText(htmlItem.json.data || 'No content')\n  }\n}));"
       },
       "id": "7a8961be-4c34-44e6-9347-10a934f9c674",
       "name": "js-backfill-merge-with-desc",
@@ -1037,177 +1037,11 @@
     },
     {
       "parameters": {
-        "operation": "update",
-        "schema": {
-          "__rl": true,
-          "mode": "list",
-          "value": "public",
-          "cachedResultName": "public"
-        },
-        "table": {
-          "__rl": true,
-          "mode": "list",
-          "value": "rea_property_offers",
-          "cachedResultName": "rea_property_offers"
-        },
-        "columns": {
-          "value": {
-            "area": "={{ $json.ai_parsed.area }}",
-            "price": "={{ $json.ai_parsed.price }}",
-            "title": "={{ $json.ai_parsed.title }}",
-            "lot_size": "={{ $json.ai_parsed.lot_size }}",
-            "ai_rating": "={{ $json.ai_parsed.ai_rating }}",
-            "external_id": "={{ String($json.external_id || $json.ai_parsed.external_id || (String($json.output || '').match(/\"external_id\"\\s*:\\s*\"([^\"]+)\"/i)?.[1]) || '').trim() }}",
-            "price_per_m2": "={{ $json.ai_parsed.price_per_m2 }}",
-            "ai_analysis_html": "={{ $json.ai_parsed.ai_analysis_html }}",
-            "construction_year": "={{ $json.ai_parsed.construction_year }}"
-          },
-          "schema": [
-            {
-              "id": "external_id",
-              "type": "string",
-              "display": true,
-              "removed": false,
-              "required": true,
-              "displayName": "external_id",
-              "defaultMatch": false,
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "category",
-              "type": "string",
-              "display": true,
-              "required": false,
-              "displayName": "category",
-              "defaultMatch": false,
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "url",
-              "type": "string",
-              "display": true,
-              "required": true,
-              "displayName": "url",
-              "defaultMatch": false,
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "title",
-              "type": "string",
-              "display": true,
-              "required": false,
-              "displayName": "title",
-              "defaultMatch": false,
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "price",
-              "type": "number",
-              "display": true,
-              "required": false,
-              "displayName": "price",
-              "defaultMatch": false,
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "price_per_m2",
-              "type": "number",
-              "display": true,
-              "required": false,
-              "displayName": "price_per_m2",
-              "defaultMatch": false,
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "area",
-              "type": "number",
-              "display": true,
-              "required": false,
-              "displayName": "area",
-              "defaultMatch": false,
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "lot_size",
-              "type": "number",
-              "display": true,
-              "required": false,
-              "displayName": "lot_size",
-              "defaultMatch": false,
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "construction_year",
-              "type": "number",
-              "display": true,
-              "required": false,
-              "displayName": "construction_year",
-              "defaultMatch": false,
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "ai_rating",
-              "type": "number",
-              "display": true,
-              "required": false,
-              "displayName": "ai_rating",
-              "defaultMatch": false,
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "user_rating",
-              "type": "string",
-              "display": true,
-              "required": false,
-              "displayName": "user_rating",
-              "defaultMatch": false,
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "user_notes",
-              "type": "string",
-              "display": true,
-              "required": false,
-              "displayName": "user_notes",
-              "defaultMatch": false,
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "created_at",
-              "type": "dateTime",
-              "display": true,
-              "required": false,
-              "displayName": "created_at",
-              "defaultMatch": false,
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "last_seen_at",
-              "type": "dateTime",
-              "display": true,
-              "required": false,
-              "displayName": "last_seen_at",
-              "defaultMatch": false,
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "ai_analysis_html",
-              "type": "string",
-              "display": true,
-              "required": false,
-              "displayName": "ai_analysis_html",
-              "defaultMatch": false,
-              "canBeUsedToMatch": true
-            }
-          ],
-          "mappingMode": "defineBelow",
-          "matchingColumns": [
-            "external_id"
-          ],
-          "attemptToConvertTypes": false,
-          "convertFieldsToString": false
-        },
-        "options": {}
+        "operation": "executeQuery",
+        "query": "WITH incoming AS (\n    SELECT\n        '{{ String($json.external_id || '').replace(/'/g, \"''\") }}'::text AS external_id,\n        {{ Number($json.ai_parsed.area) || 0 }}::numeric AS area,\n        {{ Number($json.ai_parsed.price) || 0 }}::numeric AS price,\n        '{{ String($json.ai_parsed.title || '').replace(/'/g, \"''\") }}'::text AS title,\n        {{ Number($json.ai_parsed.lot_size) || 0 }}::numeric AS lot_size,\n        {{ Number($json.ai_parsed.ai_rating) || 0 }}::integer AS ai_rating,\n        {{ Number($json.ai_parsed.price_per_m2) || 0 }}::numeric AS price_per_m2,\n        '{{ String($json.ai_parsed.ai_analysis_html || '').replace(/'/g, \"''\") }}'::text AS ai_analysis_html,\n        {{ Number($json.ai_parsed.construction_year) || 0 }}::integer AS construction_year\n)\nUPDATE rea_property_offers AS offers\nSET\n    area = incoming.area,\n    price = incoming.price,\n    title = incoming.title,\n    lot_size = incoming.lot_size,\n    ai_rating = incoming.ai_rating,\n    price_per_m2 = incoming.price_per_m2,\n    ai_analysis_html = incoming.ai_analysis_html,\n    construction_year = incoming.construction_year,\n    last_seen_at = NOW()\nFROM incoming\nWHERE offers.external_id = incoming.external_id\n  AND NULLIF(BTRIM(incoming.external_id), '') IS NOT NULL\n  AND LOWER(BTRIM(incoming.external_id)) <> 'undefined'\nRETURNING offers.external_id, offers.url;",
+        "options": {
+          "queryReplacement": "="
+        }
       },
       "id": "c81edcc7-1743-47c7-aad7-661291663b85",
       "name": "sql-aia-update-offer",
@@ -1226,7 +1060,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const items = $input.all();\n\nreturn items.filter((item) => {\n  const externalId = String(item.json?.ai_parsed?.external_id || item.json?.external_id || '').trim();\n  const aiRating = Number(item.json?.ai_parsed?.ai_rating);\n\n  if (!externalId) {\n    return false;\n  }\n\n  if (!Number.isFinite(aiRating) || aiRating < 1 || aiRating > 10) {\n    return false;\n  }\n\n  return true;\n});"
+        "jsCode": "const items = $input.all();\n\nreturn items\n  .map((item) => {\n    const externalId = String(item.json?.ai_parsed?.external_id || item.json?.external_id || '').trim();\n    const aiRating = Number(item.json?.ai_parsed?.ai_rating);\n\n    if (!externalId) {\n      return null;\n    }\n\n    if (!Number.isFinite(aiRating) || aiRating < 1 || aiRating > 10) {\n      return null;\n    }\n\n    return {\n      ...item,\n      json: {\n        ...item.json,\n        external_id: externalId,\n      },\n    };\n  })\n  .filter(Boolean);"
       },
       "id": "0d6f5e30-a314-4f7d-8b8a-c4c222769101",
       "name": "js-aia-require-complete-output",
@@ -1239,7 +1073,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const feedbackHint = $json.feedback_hint || 'No feedback hint available';\n\nconst getPairedOffer = (nodeName) => {\n  try {\n    const candidate = $(nodeName).item?.json;\n    return candidate && candidate.external_id ? candidate : null;\n  } catch (error) {\n    return null;\n  }\n};\n\nconst offer =\n  getPairedOffer('Wait') ||\n  getPairedOffer('Loop Over Items') ||\n  getPairedOffer('Code in JavaScript - merge backfill with desc') ||\n  getPairedOffer('Code in JavaScript - merge offer with desc') ||\n  {};\n\nreturn [{\n  json: {\n    ...offer,\n    feedback_hint: feedbackHint,\n    feedback_hint_debug: feedbackHint\n  }\n}];"
+        "jsCode": "const items = $input.all();\n\nreturn items.map((item) => {\n  const feedbackHint = item.json.feedback_hint || 'No feedback hint available';\n\n  return {\n    json: {\n      ...item.json,\n      feedback_hint: feedbackHint,\n      feedback_hint_debug: feedbackHint,\n    },\n  };\n});"
       },
       "id": "99ef6f08-83ff-45a3-b1a1-19f8318dfd73",
       "name": "js-aia-attach-feedback-hint",
@@ -1855,7 +1689,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO rea_import_run_offer_events\n    (run_id, stage_key, stage_order, external_id, url, event_type, event_reason, payload)\nVALUES (\n    '{{ String($json.run_id || '').replace(/'/g, \"''\") }}',\n    '{{ String($json.stage_key || '').replace(/'/g, \"''\") }}',\n    {{ Number($json.stage_order) || 0 }},\n    '{{ String($json.external_id || '').replace(/'/g, \"''\") }}',\n    {{ $json.url ? \"'\" + String($json.url).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    '{{ String($json.event_type || '').replace(/'/g, \"''\") }}',\n    {{ $json.event_reason ? \"'\" + String($json.event_reason).replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    '{{ (() => { const payload = $json.payload; const text = typeof payload === 'string' ? payload : JSON.stringify(payload ?? {}); return text.replace(/'/g, \"''\"); })() }}'::jsonb\n);",
+        "query": "WITH incoming AS (\n    SELECT\n        '{{ String($json.run_id || '').replace(/'/g, \"''\") }}'::text AS run_id,\n        '{{ String($json.stage_key || '').replace(/'/g, \"''\") }}'::text AS stage_key,\n        {{ Number($json.stage_order) || 0 }}::int AS stage_order,\n        '{{ String($json.external_id || '').replace(/'/g, \"''\") }}'::text AS external_id,\n        {{ $json.url ? \"'\" + String($json.url).replace(/'/g, \"''\") + \"'\" : 'NULL' }}::text AS url,\n        '{{ String($json.event_type || '').replace(/'/g, \"''\") }}'::text AS event_type,\n        {{ $json.event_reason ? \"'\" + String($json.event_reason).replace(/'/g, \"''\") + \"'\" : 'NULL' }}::text AS event_reason,\n        '{{ (() => { const payload = $json.payload; const text = typeof payload === 'string' ? payload : JSON.stringify(payload ?? {}); return text.replace(/'/g, \"''\"); })() }}'::jsonb AS payload\n)\nINSERT INTO rea_import_run_offer_events\n    (run_id, stage_key, stage_order, external_id, url, event_type, event_reason, payload)\nSELECT\n    run_id,\n    stage_key,\n    stage_order,\n    external_id,\n    url,\n    event_type,\n    event_reason,\n    payload\nFROM incoming\nWHERE NULLIF(BTRIM(run_id), '') IS NOT NULL\n  AND LOWER(BTRIM(run_id)) <> 'undefined'\n  AND NULLIF(BTRIM(stage_key), '') IS NOT NULL\n  AND NULLIF(BTRIM(external_id), '') IS NOT NULL\n  AND LOWER(BTRIM(external_id)) <> 'undefined';",
         "options": {
           "queryReplacement": "="
         }
@@ -2001,9 +1835,138 @@
     },
     {
       "parameters": {
-        "model": "mistral-nemo:12b-instruct-2407-q8_0",
-        "options": {},
-        "baseUrl": "http://host.docker.internal:11434"
+        "jsCode": "const now = new Date();\nconst timestamp = now.toISOString().replace(/[:.]/g, '').slice(0, 15) + 'Z';\nconst random = Math.random().toString(36).slice(2, 14).toUpperCase();\n\nreturn [{\n  json: {\n    run_id: `${timestamp}__${random}`,\n    workflow_name: 'Real Estate AI Agent',\n    workflow_version: '1.8.1',\n    trigger_source: 'backfill',\n    started_at: now.toISOString(),\n  }\n}];"
+      },
+      "id": "tlm-init-run-backfill-20260526",
+      "name": "tlm-init-run-backfill",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        82800,
+        22304
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO rea_import_runs (\n    run_id,\n    workflow_name,\n    workflow_version,\n    trigger_source,\n    started_at,\n    status,\n    raw_execution_id\n) VALUES (\n    '{{ $json.run_id }}'::text,\n    '{{ String($json.workflow_name || '').replace(/'/g, \"''\") }}'::text,\n    NULLIF('{{ String($json.workflow_version || '').replace(/'/g, \"''\") }}', '')::text,\n    '{{ String($json.trigger_source || 'backfill').replace(/'/g, \"''\") }}'::text,\n    '{{ $json.started_at }}'::timestamptz,\n    'running'::text,\n    NULL\n)\nON CONFLICT (run_id) DO UPDATE SET\n    workflow_name = EXCLUDED.workflow_name,\n    workflow_version = EXCLUDED.workflow_version,\n    trigger_source = EXCLUDED.trigger_source,\n    started_at = EXCLUDED.started_at,\n    status = 'running'\nRETURNING run_id, workflow_name, workflow_version, trigger_source, started_at;",
+        "options": {
+          "queryReplacement": "="
+        }
+      },
+      "id": "tlm-sql-insert-run-backfill-20260526",
+      "name": "tlm-sql-insert-run-backfill",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        83024,
+        22304
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "D430FF4ekWv9XfdT",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst insertedRun = $('tlm-sql-insert-run-backfill').all();\nconst fallbackRunId = String(insertedRun[0]?.json?.run_id || '').trim();\n\nreturn items.map((item) => {\n  const currentRunId = String(item.json?.run_id || '').trim();\n\n  return {\n    ...item,\n    json: {\n      ...item.json,\n      run_id: currentRunId || fallbackRunId,\n    },\n  };\n});"
+      },
+      "id": "tlm-backfill-attach-run-id-20260526",
+      "name": "tlm-backfill-attach-run-id",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        83248,
+        22304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nif (items.length === 0) {\n  return [];\n}\n\nreturn items.map((item) => ({\n  json: {\n    run_id: item.json.run_id,\n    stage_key: 'select_candidates',\n    stage_order: 1,\n    external_id: String(item.json.external_id || '').trim() || null,\n    url: item.json.url || null,\n    event_type: 'entered',\n    event_reason: null,\n    payload: {},\n  },\n}));"
+      },
+      "id": "tlm-backfill-select-candidates-events-20260526",
+      "name": "tlm-backfill-select-candidates-events",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        83472,
+        22304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nif (items.length === 0) {\n  return [];\n}\n\nconst runId = items[0]?.json?.run_id;\nif (!runId || String(runId).trim() === '' || String(runId).toLowerCase() === 'undefined') {\n  return [];\n}\n\nreturn [{\n  json: {\n    run_id: runId,\n    stage_key: 'select_candidates',\n    stage_order: 1,\n    input_count: items.length,\n    output_count: items.length,\n    dropped_count: 0,\n    error_count: 0,\n    metadata: {},\n  },\n}];"
+      },
+      "id": "tlm-backfill-select-candidates-summary-20260526",
+      "name": "tlm-backfill-select-candidates-summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        83472,
+        22400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nconst asNumber = (value) => {\n  const n = Number(value);\n  return Number.isFinite(n) && n >= 0 ? n : 0;\n};\n\nconst extractTokenUsage = (item) => {\n  const tokenPaths = [\n    item.json?.usage,\n    item.json?.tokenUsage,\n    item.json?.responseMetadata?.tokenUsage,\n    item.json?.output?.usage,\n    item.json?.output?.tokenUsage,\n    item.json?.raw?.usage,\n  ];\n\n  for (const usage of tokenPaths) {\n    if (!usage || typeof usage !== 'object') continue;\n\n    const inputTokens = asNumber(usage.input_tokens ?? usage.inputTokens ?? usage.prompt_tokens ?? usage.promptTokens ?? usage.input ?? usage.prompt);\n    const outputTokens = asNumber(usage.output_tokens ?? usage.outputTokens ?? usage.completion_tokens ?? usage.completionTokens ?? usage.output ?? usage.completion);\n    const totalTokens = asNumber(usage.total_tokens ?? usage.totalTokens ?? usage.total);\n\n    if (inputTokens > 0 || outputTokens > 0 || totalTokens > 0) {\n      const effectiveTotal = totalTokens > 0 ? totalTokens : inputTokens + outputTokens;\n      return {\n        input_tokens: inputTokens,\n        output_tokens: outputTokens,\n        total_tokens: effectiveTotal,\n      };\n    }\n  }\n\n  return null;\n};\n\nreturn items.map((item) => {\n  const externalId = String(item.json?.ai_parsed?.external_id || item.json?.external_id || '').trim();\n  const aiRating = Number(item.json?.ai_parsed?.ai_rating);\n  const success = externalId !== '' && Number.isFinite(aiRating) && aiRating >= 1 && aiRating <= 10;\n  const tokenUsage = extractTokenUsage(item);\n\n  return {\n    json: {\n      run_id: item.json?.run_id || null,\n      stage_key: 'ai_rate',\n      stage_order: 4,\n      external_id: externalId || null,\n      url: item.json?.url || null,\n      event_type: success ? 'rated' : 'failed',\n      event_reason: success ? null : String(item.json?.ai_parse_error || 'invalid_ai_output'),\n      payload: {\n        ai_parse_valid: Boolean(item.json?.ai_parse_valid),\n        ai_rating: success ? Math.round(aiRating) : null,\n        ai: tokenUsage,\n      },\n    },\n  };\n}).filter((item) => String(item.json.external_id || '').trim() !== '');"
+      },
+      "id": "tlm-backfill-ai-rate-events-20260526",
+      "name": "tlm-backfill-ai-rate-events",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        85184,
+        22304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nif (items.length === 0) {\n  return [];\n}\n\nconst runId = items[0]?.json?.run_id;\nif (!runId || String(runId).trim() === '' || String(runId).toLowerCase() === 'undefined') {\n  return [];\n}\n\nlet rated = 0;\nlet failed = 0;\nconst failures = {};\n\nconst tokens = {\n  input_tokens: 0,\n  output_tokens: 0,\n  total_tokens: 0,\n};\n\nfor (const item of items) {\n  const usage = item.json?.payload?.ai || {};\n  tokens.input_tokens += Number(usage.input_tokens) || 0;\n  tokens.output_tokens += Number(usage.output_tokens) || 0;\n  tokens.total_tokens += Number(usage.total_tokens) || 0;\n\n  if (item.json.event_type === 'rated') {\n    rated += 1;\n    continue;\n  }\n\n  failed += 1;\n  const reason = String(item.json.event_reason || 'invalid_ai_output');\n  failures[reason] = (failures[reason] || 0) + 1;\n}\n\nreturn [{\n  json: {\n    run_id: runId,\n    stage_key: 'ai_rate',\n    stage_order: 4,\n    input_count: items.length,\n    output_count: rated,\n    dropped_count: failed,\n    error_count: failed,\n    metadata: {\n      drops: failures,\n      ai: tokens,\n    },\n  },\n}];"
+      },
+      "id": "tlm-backfill-ai-rate-summary-20260526",
+      "name": "tlm-backfill-ai-rate-summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        85408,
+        22304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const updatedItems = $input.all();\nconst sourceItems = $('js-aia-require-complete-output').all();\n\nconst contextsByExternalId = new Map();\nfor (const item of sourceItems) {\n  const externalId = String(item.json?.external_id || item.json?.ai_parsed?.external_id || '').trim();\n  if (!contextsByExternalId.has(externalId)) {\n    contextsByExternalId.set(externalId, []);\n  }\n  contextsByExternalId.get(externalId).push(item.json);\n}\n\nconst takeContext = (externalId, fallbackIndex) => {\n  const queue = contextsByExternalId.get(externalId);\n  if (queue && queue.length > 0) {\n    return queue.shift();\n  }\n  return sourceItems[fallbackIndex]?.json ?? {};\n};\n\nreturn updatedItems.map((item, index) => {\n  const externalId = String(item.json?.external_id || '').trim();\n  const context = takeContext(externalId, index);\n  const aiRating = Number(context?.ai_parsed?.ai_rating);\n  const runId = String(context.run_id || '').trim();\n\n  return {\n    json: {\n      run_id: runId || null,\n      stage_key: 'update_offer_after_ai',\n      stage_order: 5,\n      external_id: externalId || String(context.external_id || '').trim() || null,\n      url: context.url || item.json?.url || null,\n      event_type: 'updated',\n      event_reason: 'ai_rated',\n      payload: {\n        is_new_offer: false,\n        ai_rating: Number.isFinite(aiRating) ? Math.round(aiRating) : null,\n      },\n    },\n  };\n}).filter((item) => String(item.json.run_id || '').trim() !== '' && String(item.json.external_id || '').trim() !== '');"
+      },
+      "id": "tlm-backfill-update-offer-events-20260526",
+      "name": "tlm-backfill-update-offer-events",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        85408,
+        22624
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nif (items.length === 0) {\n  return [];\n}\n\nconst runId = items[0]?.json?.run_id;\nif (!runId || String(runId).trim() === '' || String(runId).toLowerCase() === 'undefined') {\n  return [];\n}\n\nreturn [{\n  json: {\n    run_id: runId,\n    stage_key: 'update_offer_after_ai',\n    stage_order: 5,\n    input_count: items.length,\n    output_count: items.length,\n    dropped_count: 0,\n    error_count: 0,\n    metadata: {\n      updated: items.length,\n    },\n  },\n}];"
+      },
+      "id": "tlm-backfill-update-offer-summary-20260526",
+      "name": "tlm-backfill-update-offer-summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        85632,
+        22624
+      ]
+    },
+    {
+      "parameters": {
+        "model": "={{$env.OLLAMA_MODEL || \"mistral-nemo:12b-instruct-2407-q8_0\"}}",
+        "options": {
+          "numCtx": 4096
+        },
+        "baseUrl": "={{$env.OLLAMA_BASE_URL || \"http://ollama:11434\"}}"
       },
       "type": "@n8n/n8n-nodes-langchain.lmChatOllama",
       "typeVersion": 1,
@@ -2295,7 +2258,7 @@
       "main": [
         [
           {
-            "node": "sql-backfill-ai",
+            "node": "tlm-init-run-backfill",
             "type": "main",
             "index": 0
           }
@@ -2317,7 +2280,72 @@
       "main": [
         [
           {
+            "node": "tlm-backfill-attach-run-id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tlm-init-run-backfill": {
+      "main": [
+        [
+          {
+            "node": "tlm-sql-insert-run-backfill",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tlm-sql-insert-run-backfill": {
+      "main": [
+        [
+          {
+            "node": "sql-backfill-ai",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tlm-backfill-attach-run-id": {
+      "main": [
+        [
+          {
             "node": "hr-backfill",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "tlm-backfill-select-candidates-events",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "tlm-backfill-select-candidates-summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tlm-backfill-select-candidates-events": {
+      "main": [
+        [
+          {
+            "node": "tlm-sql-insert-event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tlm-backfill-select-candidates-summary": {
+      "main": [
+        [
+          {
+            "node": "tlm-sql-upsert-stage-metrics",
             "type": "main",
             "index": 0
           }
@@ -2629,6 +2657,38 @@
             "node": "js-aia-require-complete-output",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "tlm-backfill-ai-rate-events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tlm-backfill-ai-rate-events": {
+      "main": [
+        [
+          {
+            "node": "tlm-sql-insert-event",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "tlm-backfill-ai-rate-summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tlm-backfill-ai-rate-summary": {
+      "main": [
+        [
+          {
+            "node": "tlm-sql-upsert-stage-metrics",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -2649,6 +2709,38 @@
         [
           {
             "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "tlm-backfill-update-offer-events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tlm-backfill-update-offer-events": {
+      "main": [
+        [
+          {
+            "node": "tlm-sql-insert-event",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "tlm-backfill-update-offer-summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tlm-backfill-update-offer-summary": {
+      "main": [
+        [
+          {
+            "node": "tlm-sql-upsert-stage-metrics",
             "type": "main",
             "index": 0
           }

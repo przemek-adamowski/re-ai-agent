@@ -28,6 +28,14 @@ tools:
 
 You are a **hands-on workflow engineer** for the Real Estate AI Agent pipeline — the n8n orchestration that scrapes Polish real estate portals, parses listings, rates via Anthropic AI, and persists to PostgreSQL.
 
+## Shared Context
+- **Persistent Memory:** Always follow the workflow defined in `/Users/przemyslaw.adamowski/.copilot/agents/shared/persistent-memory.md`.
+
+## Persistent Memory Scope
+- `MEM0_USER_ID=przemyslaw-adamowski`
+- `MEM0_AGENT_ID=n8n-developer`
+- **Declared knowledge vault:** none. This agent's knowledge lives in the repo (workflow JSON, parser JS, schema). Use Mem0 only for stable operating conventions and verified environment facts (e.g. portal quirks confirmed across runs, recurring rate-limit values, durable upsert decisions).
+
 ## Operating Principles
 
 - **Single source of truth**: the active workflow definition lives in `n8n/workflows/Real Estate AI Agent.json`; parser JS files in `n8n/parsers/js/` are synced mirrors.
@@ -522,106 +530,6 @@ NO portal may emit URLs on city subdomains (e.g., `https://krakow.nieruchomosci-
 ```
 
 **Benefit**: Prevents "invalid host" 400/403 errors from CDN/WAF.
-
----
-
-## 12. Azure Anthropic Firewall Troubleshooting
-
-### Symptom
-
-```
-Forbidden - perhaps check your credentials?
-Access denied due to Virtual Network/Firewall rules.
-```
-
-Error occurs in **Anthropic Chat Model** node, not in HTTP Request.
-
-### Root Cause
-
-Nonprod AI accounts (`az-gpo-swc-nprd-vtr-aif1`, `az-gpo-euw-nprd-vtr-aif2`) have:
-
-- `publicNetworkAccess = Enabled`
-- `networkAcls.defaultAction = Deny`
-- Explicit IP whitelist in `networkAcls.ipRules[]`
-
-If your current public IP is not in the whitelist, all Anthropic calls fail.
-
-### Check & Fix Workflow
-
-1. **Detect your current public IP**:
-
-   ```bash
-   MYIP=$(curl -s https://api.ipify.org)
-   echo "My IP: $MYIP"
-   ```
-
-2. **Check both accounts' firewall rules**:
-
-   ```bash
-   SUB='c663347b-d205-4500-a254-d3cbf905c626'
-   RG='az-gpo-euw-nprd-vtr-hub-rg1'
-
-   for ACC in az-gpo-swc-nprd-vtr-aif1 az-gpo-euw-nprd-vtr-aif2; do
-     echo "=== $ACC ==="
-     az rest --method get \
-       --url "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.CognitiveServices/accounts/$ACC?api-version=2024-10-01" \
-       --query "{isWhitelisted:contains(properties.networkAcls.ipRules[].value, '$MYIP'),ipRules:properties.networkAcls.ipRules[].value}" \
-       -o json
-   done
-   ```
-
-3. **If not whitelisted, add your IP**:
-
-   ```bash
-   for ACC in az-gpo-swc-nprd-vtr-aif1 az-gpo-euw-nprd-vtr-aif2; do
-     az cognitiveservices account network-rule add \
-       --resource-group "$RG" \
-       --name "$ACC" \
-       --ip-address "$MYIP"
-   done
-   ```
-
-4. **Verify after change**:
-   ```bash
-   for ACC in az-gpo-swc-nprd-vtr-aif1 az-gpo-euw-nprd-vtr-aif2; do
-     az rest --method get \
-       --url "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.CognitiveServices/accounts/$ACC?api-version=2024-10-01" \
-       --query "contains(properties.networkAcls.ipRules[].value, '$MYIP')" \
-       -o tsv
-   done
-   ```
-   Expected: `true` for both.
-
-### Permanent Solutions
-
-| Option                                  | Pros                                        | Cons                          |
-| --------------------------------------- | ------------------------------------------- | ----------------------------- |
-| Use office VPN/fixed NAT                | Immediate; no Azure changes                 | Only works from office        |
-| Run n8n on Azure (e.g., Container Apps) | Stable outbound IP; private endpoint option | Extra infrastructure          |
-| Request IP range add to whitelist       | Works from anywhere                         | Requires Azure change request |
-
-### Alignment Mismatch
-
-**Known issue**: `83.10.31.144` exists on `aif1` but not on `aif2`. If office uses that IP, calls to `aif2` will fail. Always add IP to **both** accounts and keep lists aligned.
-
----
-
-## 13. Rate Limiting & Retry Strategy
-
-### Anthropic Token Limit Error
-
-```
-Rate limit of 100000 per 60s exceeded for UserByModelByMinuteUncachedInputTokens.
-Please wait 60 seconds before retrying.
-```
-
-**Fix**: Add Wait node (65–90 seconds) before Anthropic node if batch is large (>100 items). Reduce raw_html size sent to AI (trim to 8k–15k chars).
-
-### HTTP Portal Rate Limits
-
-Portal may block if too many requests in short window.
-
-**Fix**: Add Wait node (1–3 seconds) between detail-page fetches. Consider stagger: wait between item 50, 100, 150, etc.
 
 ---
 
