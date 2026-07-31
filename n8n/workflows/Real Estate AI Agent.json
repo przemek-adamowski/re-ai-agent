@@ -323,19 +323,6 @@
     },
     {
       "parameters": {
-        "jsCode": "return $input.all().map((item) => ({ json: { run_id: String(item.json?.run_id || '').trim(), summary: item.json?.summary || {} } }));"
-      },
-      "id": "c8cc53b2-f610-48c9-bc89-dce65227966c",
-      "name": "tlm-build-summary",
-      "type": "n8n-nodes-base.code",
-      "position": [
-        84384,
-        22016
-      ],
-      "typeVersion": 2
-    },
-    {
-      "parameters": {
         "url": "https://www.otodom.pl/pl/wyniki/sprzedaz/mieszkanie,rynek-pierwotny/wiele-lokalizacji?limit=36&ownerTypeSingleSelect=ALL&areaMin=90&extras=%5BTERRACE%5D&locations=%5Bmalopolskie%2Fkrakow%2Fkrakow%2Fkrakow%2Fdebniki%2Fkostrze%2Cmalopolskie%2Fkrakow%2Fkrakow%2Fkrakow%2Fdebniki%2Fpychowice%2Cmalopolskie%2Fkrakow%2Fkrakow%2Fkrakow%2Fdebniki%2Fruczaj%2Cmalopolskie%2Fkrakow%2Fkrakow%2Fkrakow%2Fdebniki%2Fskotniki%2Cmalopolskie%2Fkrakow%2Fkrakow%2Fkrakow%2Fdebniki%2Ftyniec%2Cmalopolskie%2Fkrakow%2Fkrakow%2Fkrakow%2Fdebniki%2Fzakrzowek%2Cmalopolskie%2Fkrakow%2Fkrakow%2Fkrakow%2Fdebniki%2Fkobierzyn%2Cmalopolskie%2Fkrakow%2Fkrakow%2Fkrakow%2Fdebniki%2Fsidzina%2Cmalopolskie%2Fkrakow%2Fkrakow%2Fkrakow%2Fdebniki%2Fdebniki%2Cmalopolskie%2Fkrakow%2Fkrakow%2Fkrakow%2Fdebniki%2Fbodzow%2Cmalopolskie%2Fkrakow%2Fkrakow%2Fkrakow%2Fdebniki%2Fdebniki-zachod%2Cmalopolskie%2Fkrakow%2Fkrakow%2Fkrakow%2Fdebniki%2Folszyny%5D&by=DEFAULT&direction=DESC",
         "sendHeaders": true,
         "headerParameters": {
@@ -1747,19 +1734,6 @@
     },
     {
       "parameters": {
-        "jsCode": "return $input.all();"
-      },
-      "id": "tlm-return-events-for-metrics-1777538047536",
-      "name": "tlm-return-events-for-metrics",
-      "type": "n8n-nodes-base.code",
-      "position": [
-        83400,
-        22400
-      ],
-      "typeVersion": 2
-    },
-    {
-      "parameters": {
         "jsCode": "const items = $input.all();\n\nconst normalizedIds = items\n  .map((item) => String(item.json.external_id ?? '').trim())\n  .filter((id) => id !== '' && id.toLowerCase() !== 'undefined');\n\nconst externalIds = Array.from(new Set(normalizedIds));\n\nreturn [{\n  json: {\n    run_id: items[0]?.json?.run_id,\n    external_ids: externalIds,\n  }\n}];"
       },
       "id": "tlm-build-existing-ids-input-1779177025765",
@@ -1848,30 +1822,7 @@
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "INSERT INTO rea_import_runs (\n    run_id,\n    workflow_name,\n    workflow_version,\n    trigger_source,\n    started_at,\n    status,\n    raw_execution_id\n) VALUES (\n    '{{ $json.run_id }}'::text,\n    '{{ String($json.workflow_name || '').replace(/'/g, \"''\") }}'::text,\n    NULLIF('{{ String($json.workflow_version || '').replace(/'/g, \"''\") }}', '')::text,\n    '{{ String($json.trigger_source || 'backfill').replace(/'/g, \"''\") }}'::text,\n    '{{ $json.started_at }}'::timestamptz,\n    'running'::text,\n    NULL\n)\nON CONFLICT (run_id) DO UPDATE SET\n    workflow_name = EXCLUDED.workflow_name,\n    workflow_version = EXCLUDED.workflow_version,\n    trigger_source = EXCLUDED.trigger_source,\n    started_at = EXCLUDED.started_at,\n    status = 'running'\nRETURNING run_id, workflow_name, workflow_version, trigger_source, started_at;",
-        "options": {
-          "queryReplacement": "="
-        }
-      },
-      "id": "tlm-sql-insert-run-backfill-20260526",
-      "name": "tlm-sql-insert-run-backfill",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.6,
-      "position": [
-        83024,
-        22304
-      ],
-      "credentials": {
-        "postgres": {
-          "id": "D430FF4ekWv9XfdT",
-          "name": "Postgres account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "const items = $input.all();\nconst insertedRun = $('tlm-sql-insert-run-backfill').all();\nconst fallbackRunId = String(insertedRun[0]?.json?.run_id || '').trim();\n\nreturn items.map((item) => {\n  const currentRunId = String(item.json?.run_id || '').trim();\n\n  return {\n    ...item,\n    json: {\n      ...item.json,\n      run_id: currentRunId || fallbackRunId,\n    },\n  };\n});"
+        "jsCode": "const items = $input.all();\nconst insertedRun = $('tlm-sql-insert-run').all();\nconst fallbackRunId = String(insertedRun[0]?.json?.run_id || '').trim();\n\nreturn items.map((item) => {\n  const currentRunId = String(item.json?.run_id || '').trim();\n\n  return {\n    ...item,\n    json: {\n      ...item.json,\n      run_id: currentRunId || fallbackRunId,\n    },\n  };\n});"
       },
       "id": "tlm-backfill-attach-run-id-20260526",
       "name": "tlm-backfill-attach-run-id",
@@ -2089,17 +2040,6 @@
       "main": [
         [
           {
-            "node": "tlm-build-summary",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "tlm-build-summary": {
-      "main": [
-        [
-          {
             "node": "tlm-sql-finalize-run",
             "type": "main",
             "index": 0
@@ -2201,6 +2141,11 @@
             "node": "hr-no-apartment",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "sql-backfill-ai",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -2291,18 +2236,7 @@
       "main": [
         [
           {
-            "node": "tlm-sql-insert-run-backfill",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "tlm-sql-insert-run-backfill": {
-      "main": [
-        [
-          {
-            "node": "sql-backfill-ai",
+            "node": "tlm-sql-insert-run",
             "type": "main",
             "index": 0
           }
@@ -2621,7 +2555,7 @@
             "index": 0
           },
           {
-            "node": "tlm-return-events-for-metrics",
+            "node": "tlm-validate-summary",
             "type": "main",
             "index": 0
           }
@@ -2915,17 +2849,6 @@
       ]
     },
     "tlm-sql-upsert-stage-metrics": {},
-    "tlm-return-events-for-metrics": {
-      "main": [
-        [
-          {
-            "node": "tlm-validate-summary",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "tlm-build-existing-ids-input": {
       "main": [
         [
